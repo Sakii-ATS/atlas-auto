@@ -1,0 +1,28 @@
+{
+  // Un seul Worker sert le site ET l API.
+  //   - tout ce qui commence par /api passe par worker/index.js
+  //   - tout le reste est un fichier de frontend/dist
+  //   - une adresse inconnue renvoie index.html : c est React qui route
+  "name": "atlas-auto",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-09-11",
+
+  "assets": {
+    "directory": "./frontend/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api", "/api/*"]
+  },
+
+  // La base. Remplace database_id par celui que renvoie :
+  //     npx wrangler d1 create atlas-auto
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "atlas-auto",
+      "database_id": "A_REMPLACER_APRES_CREATION"
+    }
+  ],
+
+  "observability": { "enabled": true }
+}

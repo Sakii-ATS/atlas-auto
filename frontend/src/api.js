@@ -68,6 +68,18 @@ async function appel(chemin, { methode = "GET", corps } = {}) {
     donnees = null;
   }
 
+  // Une réponse qui n'est pas du JSON alors qu'on attendait l'API veut dire
+  // qu'on ne parle pas à l'API du tout : l'hébergeur du site a répondu à sa
+  // place. Typiquement un 405 ou un 404 renvoyé par Cloudflare Pages quand
+  // VITE_API n'est pas renseignée et que /api ne pointe sur rien.
+  if (donnees === null && [404, 405, 501].includes(reponse.status)) {
+    throw new ErreurApi(
+      "L'API n'est pas reliée à ce site. Elle doit tourner quelque part et " +
+        "son adresse être renseignée dans VITE_API au moment du build.",
+      reponse.status,
+    );
+  }
+
   if (!reponse.ok) {
     if (reponse.status === 401) setToken(null);
     throw new ErreurApi(

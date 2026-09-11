@@ -1,0 +1,16 @@
+{
+  "name": "atlas-auto",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm --prefix frontend install && npm --prefix frontend run build",
+    "dev": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy",
+    "db:creer": "wrangler d1 create atlas-auto",
+    "db:init": "wrangler d1 execute atlas-auto --local --file=./migrations/0001_schema.sql && wrangler d1 execute atlas-auto --local --file=./migrations/0002_donnees.sql",
+    "db:init:ligne": "wrangler d1 execute atlas-auto --remote --file=./migrations/0001_schema.sql && wrangler d1 execute atlas-auto --remote --file=./migrations/0002_donnees.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
