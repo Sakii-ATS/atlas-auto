@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS catalogue (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
   nom       TEXT    NOT NULL,
   prix_base INTEGER NOT NULL,
-  genre     TEXT    NOT NULL
+  genre     TEXT    NOT NULL,
+  classe    TEXT    NOT NULL DEFAULT ''   -- A | B | C, comme au PDM en jeu
 );
 CREATE INDEX IF NOT EXISTS idx_catalogue_nom ON catalogue (nom);
 
@@ -69,6 +70,7 @@ CREATE TABLE IF NOT EXISTS vehicules (
   marge       INTEGER NOT NULL DEFAULT 0,   -- figée à l'enregistrement
   prix_achat  INTEGER NOT NULL DEFAULT 0,
   prix_vente  INTEGER NOT NULL DEFAULT 0,
+  classe      TEXT    NOT NULL DEFAULT '',  -- reprise du catalogue
   achete_par  TEXT    NOT NULL DEFAULT '',  -- visible Manager+
   statut      TEXT    NOT NULL DEFAULT 'stock',  -- stock | vendu
   cree_le     TEXT    NOT NULL DEFAULT (datetime('now'))

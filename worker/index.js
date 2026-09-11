@@ -69,6 +69,17 @@ const refus = (code, message) => {
 const GRADES = ["Vendeur/Vendeuse", "Manager", "Co-patron", "Patron"];
 const RANG = { "Vendeur/Vendeuse": 1, Manager: 2, "Co-patron": 3, Patron: 4 };
 const rang = (grade) => RANG[grade] || 0;
+
+// Classes de véhicule, comme au PDM en jeu : A est la plus haute. Un citoyen
+// ne peut acheter que dans sa classe ou en dessous.
+const CLASSES = ["C", "B", "A"];
+const rangClasse = (c) => CLASSES.indexOf(String(c || "").toUpperCase()) + 1;
+/** Classe inconnue d un côté ou de l autre : on laisse passer. */
+const classeSuffit = (client, vehicule) => {
+  const v = rangClasse(vehicule);
+  const c = rangClasse(client);
+  return v === 0 || c === 0 || c >= v;
+};
 const auMoins = (grade, minimum) => rang(grade) >= rang(minimum);
 
 /** Retire le code et les champs internes avant envoi au navigateur. */
@@ -633,11 +644,12 @@ on("GET", "/catalogue", LIBRE, async (c) =>
   c.db.tous("SELECT * FROM catalogue ORDER BY nom"));
 
 on("POST", "/catalogue", "Co-patron", async (c) => {
-  const { nom, prixBase, genre } = c.corps;
+  const { nom, prixBase, genre, classe } = c.corps;
   if (!nom) refus(400, "Nom du modèle obligatoire.");
   const { id } = await c.db.exec(
-    "INSERT INTO catalogue (nom, prix_base, genre) VALUES (?, ?, ?)",
+    "INSERT INTO catalogue (nom, prix_base, genre, classe) VALUES (?, ?, ?, ?)",
     String(nom).trim(), Math.round(Number(prixBase) || 0), String(genre || ""),
+    String(classe || "").toUpperCase(),
   );
   return c.db.un("SELECT * FROM catalogue WHERE id = ?", id);
 });
@@ -650,10 +662,11 @@ on("PUT", "/catalogue", "Co-patron", async (c) => {
   const instructions = [c.db.prep("DELETE FROM catalogue", [])];
   for (const l of lignes) {
     instructions.push(
-      c.db.prep("INSERT INTO catalogue (nom, prix_base, genre) VALUES (?, ?, ?)", [
+      c.db.prep("INSERT INTO catalogue (nom, prix_base, genre, classe) VALUES (?, ?, ?, ?)", [
         String(l.nom || "").trim(),
         Math.round(Number(l.prixBase ?? l.prix_base) || 0),
         String(l.genre || ""),
+        String(l.classe || "").toUpperCase(),
       ]),
     );
   }
@@ -669,10 +682,11 @@ on("PATCH", "/catalogue/:id", "Co-patron", async (c) => {
   if (!m) refus(404, "Modèle introuvable.");
   const b = c.corps;
   await c.db.exec(
-    "UPDATE catalogue SET nom = ?, prix_base = ?, genre = ? WHERE id = ?",
+    "UPDATE catalogue SET nom = ?, prix_base = ?, genre = ?, classe = ? WHERE id = ?",
     b.nom ?? m.nom,
     b.prixBase === undefined ? m.prix_base : Math.round(Number(b.prixBase) || 0),
     b.genre ?? m.genre,
+    b.classe === undefined ? m.classe : String(b.classe || "").toUpperCase(),
     m.id,
   );
   return c.db.un("SELECT * FROM catalogue WHERE id = ?", m.id);
@@ -707,7 +721,7 @@ on("DELETE", "/genres/:id", "Co-patron", async (c) => {
 /** Vitrine publique : le stock, sans aucun détail financier interne. */
 on("GET", "/vitrine", LIBRE, async (c) =>
   c.db.tous(
-    `SELECT id, modele, genre, categorie, image, description, prix_vente
+    `SELECT id, modele, genre, classe, categorie, image, description, prix_vente
        FROM vehicules WHERE statut = 'stock' ORDER BY id DESC`,
   ));
 
@@ -716,7 +730,7 @@ on("GET", "/vehicules", CONNECTE, async (c) => {
   return c.db.tous(
     complet
       ? "SELECT * FROM vehicules ORDER BY id DESC"
-      : `SELECT id, modele, genre, categorie, image, description, prix_vente, statut
+      : `SELECT id, modele, genre, classe, categorie, image, description, prix_vente, statut
            FROM vehicules WHERE statut = 'stock' ORDER BY id DESC`,
   );
 });
@@ -741,9 +755,9 @@ on("POST", "/vehicules", "Vendeur/Vendeuse", async (c) => {
   const prix = await figerPrix(c.db, { categorie, prixBase: fiche.prix_base });
   const { id } = await c.db.exec(
     `INSERT INTO vehicules
-       (modele, genre, categorie, image, description, prix_base, reduction, marge, prix_achat, prix_vente, achete_par)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    fiche.nom, fiche.genre, categorie,
+       (modele, genre, classe, categorie, image, description, prix_base, reduction, marge, prix_achat, prix_vente, achete_par)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    fiche.nom, fiche.genre, fiche.classe || "", categorie,
     String(image || ""), String(description || ""),
     prix.prixBase, prix.reduction, prix.marge, prix.prixAchat, prix.prixVente,
     `${c.employe.prenom} ${c.employe.nom}`,
@@ -810,6 +824,14 @@ on("POST", "/mouvements", "Vendeur/Vendeuse", async (c) => {
     if (!vehicule) refus(404, "Véhicule introuvable.");
     if (type === "vente" && vehicule.statut === "vendu") {
       refus(409, "Ce véhicule est déjà vendu.");
+    }
+    // Un citoyen n achète que dans sa classe ou en dessous, comme au PDM.
+    if (type === "vente" && !classeSuffit(b.clientClasse, vehicule.classe)) {
+      refus(
+        403,
+        `Vente impossible : ce véhicule est de classe ${vehicule.classe}, ` +
+          `le client est de classe ${String(b.clientClasse || "—").toUpperCase()}.`,
+      );
     }
   }
 

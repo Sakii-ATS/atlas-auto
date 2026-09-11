@@ -15,6 +15,7 @@ const depuisApi = (v) => ({
   nom: v.modele,
   type: v.categorie,
   categorie: v.genre,
+  classe: v.classe || "",
   image: v.image,
   description: v.description,
   prixBase: v.prix_base ?? v.prix_vente ?? 0,
@@ -109,6 +110,17 @@ function useRoute() {
 
 const ROLES = ["Visiteur", "Vendeur/Vendeuse", "Manager", "Co-patron", "Patron"];
 const CLASSES_CLIENT = ["A", "B", "C"];
+
+// Classe des véhicules, comme au PDM en jeu : A est la plus haute. Un citoyen
+// n achète que dans sa classe ou en dessous.
+const RANG_CLASSE = { C: 1, B: 2, A: 3 };
+const rangClasse = (c) => RANG_CLASSE[String(c || "").toUpperCase()] || 0;
+const classeSuffit = (client, vehicule) => {
+  const v = rangClasse(vehicule);
+  const cl = rangClasse(client);
+  return v === 0 || cl === 0 || cl >= v;
+};
+const TON_CLASSE = { A: "amber", B: "blue", C: "grey" };
 const TYPES_VEHICULE = ["Occasion", "Import"];
 
 const CAN_MANAGE_STOCK = ["Vendeur/Vendeuse", "Manager", "Co-patron", "Patron"];
@@ -698,6 +710,7 @@ function VehicleCard({ v, showStatusBadge, showTypeBadge, showInternal, showBase
       <div style={s.cardBody}>
         <div style={s.cardTitleRow}>
           <div style={s.cardTitle}>{v.nom}</div>
+          {v.classe && <Badge tone={TON_CLASSE[v.classe] || "grey"}>Classe {v.classe}</Badge>}
           {v.categorie && <Badge tone="grey">{v.categorie}</Badge>}
         </div>
 
@@ -814,12 +827,13 @@ function PanneauVente({ vehicle, onClose, onConfirm, moi, isMobile, reductionMax
   // Si la réduction accordée couvre à elle seule le montant de la surcharge
   // kilométrique, les km sont offerts (pas de double avantage cumulé).
   const kmOfferts = reductionVente > 0 && reductionMontant > surchargeKm;
+  const venteAutorisee = classeSuffit(clientClasse, vehicle.classe);
   const surchargeEffective = kmOfferts ? 0 : surchargeKm;
   const prixFinal = prixVente - reductionMontant + surchargeEffective;
 
   function submit(e) {
     e.preventDefault();
-    if (!clientNom.trim()) return;
+    if (!clientNom.trim() || !venteAutorisee) return;
     onConfirm({
       clientNom,
       clientPrenom,
@@ -936,6 +950,44 @@ function PanneauVente({ vehicle, onClose, onConfirm, moi, isMobile, reductionMax
           ))}
         </select>
 
+        {/* Les deux classes face à face : celle du véhicule, celle du client. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            flexWrap: "wrap",
+            padding: "10px 12px",
+            borderRadius: 8,
+            marginBottom: 10,
+            background: venteAutorisee ? "rgba(97,181,120,0.08)" : "rgba(214,90,80,0.10)",
+            border: `1px solid ${venteAutorisee ? "rgba(97,181,120,0.35)" : "rgba(214,90,80,0.5)"}`,
+          }}
+        >
+          <span style={{ fontSize: 12, color: "#9CA0A8" }}>
+            Véhicule <strong style={{ color: "#E8E6E1" }}>classe {vehicle.classe || "—"}</strong>
+            {"  ·  "}
+            Client <strong style={{ color: "#E8E6E1" }}>classe {clientClasse}</strong>
+          </span>
+          <span
+            style={{
+              fontSize: 12.5,
+              fontWeight: 700,
+              color: venteAutorisee ? "#61B578" : "#D65A50",
+            }}
+          >
+            {venteAutorisee ? "Vente autorisée" : "Vente impossible"}
+          </span>
+        </div>
+
+        {!venteAutorisee && (
+          <div style={{ ...s.previewHint, color: "#D65A50", marginTop: -4 }}>
+            Un client de classe {clientClasse} ne peut pas acheter un véhicule de
+            classe {vehicle.classe}. Il lui faut au moins la classe {vehicle.classe}.
+          </div>
+        )}
+
         <label style={s.label}>Vendeur</label>
         <input
           style={{ ...s.input, opacity: 0.6 }}
@@ -951,8 +1003,12 @@ function PanneauVente({ vehicle, onClose, onConfirm, moi, isMobile, reductionMax
           <button type="button" style={s.cancelBtn} onClick={onClose}>
             Annuler
           </button>
-          <button type="submit" style={s.submitBtn}>
-            Valider la vente
+          <button
+            type="submit"
+            style={{ ...s.submitBtn, ...(venteAutorisee ? {} : { opacity: 0.45, cursor: "not-allowed" }) }}
+            disabled={!venteAutorisee}
+          >
+            {venteAutorisee ? "Valider la vente" : `Réservé à la classe ${vehicle.classe}`}
           </button>
         </div>
       </form>
@@ -1264,6 +1320,17 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
               d'abord en configurer un.
             </div>
           )}
+
+          <label style={s.label}>Classe du véhicule</label>
+          <input
+            style={{ ...s.input, opacity: 0.6 }}
+            value={modele?.classe ? `Classe ${modele.classe}` : "—"}
+            disabled
+          />
+          <div style={s.previewHint}>
+            Reprise du catalogue avec le modèle. Seul un client de cette classe
+            ou au-dessus pourra l'acheter.
+          </div>
 
           <label style={s.label}>Genre du véhicule</label>
           {form.categorie ? (
@@ -2081,7 +2148,7 @@ export default function App() {
         api.parametres(),
       ]);
       setVehicles(v.map(depuisApi));
-      setCatalogue(c.map((m) => ({ id: m.id, nom: m.nom, prixBase: m.prix_base, genre: m.genre })));
+      setCatalogue(c.map((m) => ({ id: m.id, nom: m.nom, prixBase: m.prix_base, genre: m.genre, classe: m.classe || "" })));
       setGenres(g);
       setCategories(g.map((x) => x.nom));
       setParametres({
