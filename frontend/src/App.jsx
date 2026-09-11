@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import api from "./api.js";
 import Connexion from "./Connexion.jsx";
 import Employes from "./Employes.jsx";
+import Photos from "./Photos.jsx";
 import Contrats from "./Contrats.jsx";
 import Salaires from "./Salaires.jsx";
 import Depenses from "./Depenses.jsx";
@@ -1108,6 +1109,7 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
   });
   const [rechercheModele, setRechercheModele] = useState(catalogue[0]?.nom ?? "");
   const [aSupprimer, setASupprimer] = useState(null);
+  const [envoiImage, setEnvoiImage] = useState(false);
   const [suggestionsOuvertes, setSuggestionsOuvertes] = useState(false);
 
   const modele = catalogue.find((c) => c.id === Number(form.modeleId));
@@ -1273,12 +1275,52 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
             </div>
           )}
 
-          <label style={s.label}>Image (URL)</label>
+          <label style={s.label}>Photo du véhicule</label>
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            style={{ ...s.input, padding: 8 }}
+            disabled={envoiImage}
+            onChange={async (e) => {
+              const fichier = e.target.files?.[0];
+              e.target.value = "";
+              if (!fichier) return;
+              setEnvoiImage(true);
+              try {
+                const r = await api.televerserImage(fichier);
+                setForm((f) => ({ ...f, image: r.url }));
+              } catch (err) {
+                onErreur?.(err.message);
+              } finally {
+                setEnvoiImage(false);
+              }
+            }}
+          />
+          <div style={s.previewHint}>
+            {envoiImage
+              ? "Envoi en cours…"
+              : form.image
+                ? "Photo enregistrée. Elle reste en ligne, elle n expire pas."
+                : "PNG, JPEG, WebP ou GIF. La photo est réduite automatiquement avant l envoi."}
+          </div>
+
+          {form.image && (
+            <img
+              src={form.image}
+              alt=""
+              style={{
+                width: "100%", maxHeight: 150, objectFit: "cover",
+                borderRadius: 8, border: "1px solid #2A2D34", marginBottom: 10,
+              }}
+            />
+          )}
+
+          <label style={s.label}>…ou adresse d une image</label>
           <input
             style={s.input}
             value={form.image}
             onChange={(e) => setForm({ ...form, image: e.target.value })}
-            placeholder="https://..."
+            placeholder="/voitures/sultan.png ou https://..."
           />
 
           <label style={s.label}>Description</label>
@@ -1973,6 +2015,7 @@ function Parametres({ parametres, setParametres, reductionTiers, setReductionTie
         onEnregistrer={async (t) => { await api.majTranchesMarge({ tranches: t }); await onRefresh?.(); }}
         isMobile={isMobile}
       />
+      <Photos isMobile={isMobile} />
       <Employes moi={moi} isMobile={isMobile} />
     </section>
   );

@@ -969,6 +969,98 @@ on("DELETE", "/contrats/:id", "Co-patron", async (c) => {
 });
 
 // ===========================================================================
+// IMAGES — envoyées depuis le site, rangées dans la base
+// ===========================================================================
+// Pas de service de stockage à activer : la photo est gardée en base64 dans
+// D1. Le navigateur la réduit avant l envoi, donc elle pèse peu.
+
+const TYPES_IMAGE = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+const TAILLE_MAX = 700 * 1024;
+
+on("POST", "/images", "Vendeur/Vendeuse", async (c) => {
+  const { type, donnees } = c.corps;
+  if (!TYPES_IMAGE.includes(type)) refus(415, "Format accepté : PNG, JPEG, WebP ou GIF.");
+  if (typeof donnees !== "string" || !donnees) refus(400, "Image vide.");
+
+  // base64 : 4 caractères pour 3 octets.
+  const octetsEstimes = Math.floor((donnees.length * 3) / 4);
+  if (octetsEstimes > TAILLE_MAX) {
+    refus(413, "Image trop lourde même après réduction. Essaie une photo plus petite.");
+  }
+
+  const suffixe = [...octets(6)].map((o) => o.toString(16).padStart(2, "0")).join("");
+  const extension = type.split("/")[1].replace("jpeg", "jpg");
+  const cle = `${Date.now().toString(36)}-${suffixe}.${extension}`;
+
+  await c.db.exec(
+    "INSERT INTO images (cle, type, donnees, octets, cree_par) VALUES (?, ?, ?, ?, ?)",
+    cle, type, donnees, octetsEstimes, `${c.employe.prenom} ${c.employe.nom}`,
+  );
+  return { cle, url: `/api/images/${cle}`, octets: octetsEstimes };
+});
+
+/** Sert une image. Publique : la vitrine doit pouvoir l afficher sans compte. */
+on("GET", "/images/:cle", LIBRE, async (c) => {
+  const img = await c.db.un("SELECT type, donnees FROM images WHERE cle = ?", c.params.cle);
+  if (!img) refus(404, "Image introuvable.");
+
+  // base64 -> octets
+  const binaire = atob(img.donnees);
+  const tableau = new Uint8Array(binaire.length);
+  for (let i = 0; i < binaire.length; i++) tableau[i] = binaire.charCodeAt(i);
+
+  return new Response(tableau, {
+    headers: {
+      "Content-Type": img.type,
+      // Le nom du fichier ne change jamais : le navigateur peut la garder.
+      "Cache-Control": "public, max-age=31536000, immutable",
+    },
+  });
+});
+
+/** Une photo est « utilisée » si un véhicule ou un mouvement l affiche. */
+const REQUETE_USAGE =
+  `SELECT i.cle, i.type, i.octets, i.cree_le, i.cree_par,
+          (SELECT COUNT(*) FROM vehicules v  WHERE v.image = '/api/images/' || i.cle) AS vehicules,
+          (SELECT COUNT(*) FROM mouvements m WHERE m.image = '/api/images/' || i.cle) AS mouvements
+     FROM images i
+    ORDER BY i.cree_le DESC, i.rowid DESC`;
+
+/** Inventaire des photos — réservé à la direction. */
+on("GET", "/images", "Co-patron", async (c) => {
+  const lignes = await c.db.tous(REQUETE_USAGE);
+  const photos = lignes.map((i) => ({
+    ...i,
+    url: `/api/images/${i.cle}`,
+    utilisee: i.vehicules + i.mouvements > 0,
+  }));
+  return {
+    photos,
+    total: photos.length,
+    octets: photos.reduce((s, p) => s + (p.octets || 0), 0),
+    inutilisees: photos.filter((p) => !p.utilisee).length,
+  };
+});
+
+/** Supprime d un coup toutes les photos que plus rien n affiche. */
+on("POST", "/images/menage", "Co-patron", async (c) => {
+  const { touchees } = await c.db.exec(
+    `DELETE FROM images WHERE cle NOT IN (
+       SELECT replace(image, '/api/images/', '') FROM vehicules
+        WHERE image LIKE '/api/images/%'
+       UNION
+       SELECT replace(image, '/api/images/', '') FROM mouvements
+        WHERE image LIKE '/api/images/%'
+     )`,
+  );
+  return { supprimees: touchees };
+});
+
+on("DELETE", "/images/:cle", "Co-patron", async (c) => {
+  await c.db.exec("DELETE FROM images WHERE cle = ?", c.params.cle);
+  return { fait: true };
+});
+// ===========================================================================
 // PARAMÈTRES ET TRANCHES
 // ===========================================================================
 
@@ -1071,8 +1163,14 @@ export default {
       const params = {};
       route.noms.forEach((n, i) => (params[n] = decodeURIComponent(bruts[i])));
 
+      // Le corps n est décodé en JSON que si c en est. Un envoi de fichier
+      // arrive en binaire : la route le lit elle-même depuis c.request.
       let corps = {};
-      if (["POST", "PUT", "PATCH"].includes(request.method)) {
+      const typeCorps = request.headers.get("content-type") || "";
+      if (
+        ["POST", "PUT", "PATCH"].includes(request.method) &&
+        typeCorps.includes("application/json")
+      ) {
         try {
           corps = (await request.json()) ?? {};
         } catch {
@@ -1085,6 +1183,8 @@ export default {
         query: url.searchParams,
         request,
       });
+      // Une route peut renvoyer sa propre réponse — une image, par exemple.
+      if (resultat instanceof Response) return resultat;
       return json(resultat ?? { fait: true });
     } catch (e) {
       if (e instanceof Erreur) return json({ erreur: e.message }, e.code);

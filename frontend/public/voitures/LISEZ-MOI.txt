@@ -1,0 +1,14 @@
+Les photos de véhicules.
+
+Mets tes images ici, puis dans le formulaire "Image (URL)" du site, tape le
+chemin avec une barre oblique devant :
+
+    /voitures/sultan-rs.png
+
+Pas besoin d adresse complète : c est le même domaine que le site.
+
+Ces images sont publiées avec le site, donc elles n expirent jamais — contrairement
+à un lien Discord, qui meurt au bout de 24 heures.
+
+Formats : png, jpg, webp. 25 Mo maximum par fichier.
+Après avoir ajouté des photos ici, il faut redéployer pour qu elles soient en ligne.

@@ -154,6 +154,47 @@ export const api = {
   ajouterGenre: (nom) => post("/genres", { nom }),
   supprimerGenre: (id) => del(`/genres/${id}`),
 
+  // ---------------------------------------------------------------- images
+  /**
+   * Réduit la photo dans le navigateur puis l envoie. On ne transmet jamais
+   * l original : une photo d appareil fait plusieurs méga-octets, réduite à
+   * 1280 pixels de large elle en fait cent fois moins, et à l écran ça ne se
+   * voit pas. Les GIF passent tels quels, pour garder l animation.
+   * Renvoie { url } — c est ce qu on met dans le champ image du véhicule.
+   */
+  async televerserImage(fichier) {
+    const reduire = async () => {
+      if (fichier.type === "image/gif") return { blob: fichier, type: fichier.type };
+      try {
+        const image = await createImageBitmap(fichier);
+        const ratio = Math.min(1, 1280 / image.width);
+        const largeur = Math.round(image.width * ratio);
+        const hauteur = Math.round(image.height * ratio);
+        const toile = document.createElement("canvas");
+        toile.width = largeur;
+        toile.height = hauteur;
+        toile.getContext("2d").drawImage(image, 0, 0, largeur, hauteur);
+        const blob = await new Promise((r) => toile.toBlob(r, "image/jpeg", 0.82));
+        return blob ? { blob, type: "image/jpeg" } : { blob: fichier, type: fichier.type };
+      } catch {
+        return { blob: fichier, type: fichier.type };
+      }
+    };
+
+    const { blob, type } = await reduire();
+    const donnees = await new Promise((res, rej) => {
+      const lecteur = new FileReader();
+      lecteur.onload = () => res(String(lecteur.result).split(",")[1] || "");
+      lecteur.onerror = () => rej(new ErreurApi("Lecture du fichier impossible.", 0));
+      lecteur.readAsDataURL(blob);
+    });
+
+    return post("/images", { type, donnees });
+  },
+
+  photos: () => get("/images"),
+  supprimerPhoto: (cle) => del(`/images/${cle}`),
+  menagePhotos: () => post("/images/menage"),
   // ------------------------------------------------------------- véhicules
   vitrine: () => get("/vitrine"),
   vehicules: () => get("/vehicules"),

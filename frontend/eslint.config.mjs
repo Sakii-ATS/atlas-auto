@@ -11,6 +11,7 @@ export default [
         setTimeout: "readonly", clearTimeout: "readonly", setInterval: "readonly",
         clearInterval: "readonly", Intl: "readonly", URLSearchParams: "readonly",
         alert: "readonly", location: "readonly", history: "readonly",
+        createImageBitmap: "readonly", FileReader: "readonly", Blob: "readonly",
       },
     },
     rules: { "no-undef": "error" },
