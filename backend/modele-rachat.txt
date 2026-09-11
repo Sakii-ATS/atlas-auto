@@ -1,0 +1,21 @@
+CONTRAT DE RACHAT — {{numero}}
+{{entreprise}} — le {{date}}
+
+LE VENDEUR
+{{client_prenom}} {{client_nom}} — citoyen de classe {{client_classe}}.
+
+L'ACHETEUR
+{{entreprise}}, représentée par {{employe_prenom}} {{employe_nom}} ({{employe_grade}}).
+
+VÉHICULE
+Modèle : {{vehicule}} ({{genre}})
+Montant versé au vendeur : {{prix}}
+
+Le vendeur déclare être le propriétaire légitime du véhicule et le céder libre
+de toute dette et de tout litige. {{entreprise}} en devient propriétaire à
+compter de la signature, et le montant ci-dessus lui a été intégralement versé.
+
+Fait à Los Santos, le {{date}}.
+
+Le vendeur — {{client_prenom}} {{client_nom}} (classe {{client_classe}})
+L'acheteur — {{employe_prenom}} {{employe_nom}}, pour {{entreprise}}

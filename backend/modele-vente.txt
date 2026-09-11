@@ -1,0 +1,21 @@
+CONTRAT DE VENTE — {{numero}}
+{{entreprise}} — le {{date}}
+
+LE VENDEUR
+{{entreprise}}, représentée par {{employe_prenom}} {{employe_nom}} ({{employe_grade}}).
+
+L'ACHETEUR
+{{client_prenom}} {{client_nom}} — citoyen de classe {{client_classe}}.
+
+VÉHICULE
+Modèle : {{vehicule}} ({{genre}})
+Prix de vente : {{prix}}
+
+Le véhicule est cédé en l'état. L'acheteur reconnaît en avoir pris possession
+et s'être acquitté de la totalité du montant. Le présent contrat vaut preuve
+d'achat et de propriété.
+
+Fait à Los Santos, le {{date}}.
+
+Le vendeur — {{employe_prenom}} {{employe_nom}}, pour {{entreprise}}
+L'acheteur — {{client_prenom}} {{client_nom}} (classe {{client_classe}})
