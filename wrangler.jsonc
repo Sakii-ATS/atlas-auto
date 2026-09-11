@@ -14,13 +14,12 @@
     "run_worker_first": ["/api", "/api/*"]
   },
 
-  // La base. Remplace database_id par celui que renvoie :
-  //     npx wrangler d1 create atlas-auto
+  // La base D1. Le nom de liaison DOIT rester "DB" : le Worker fait env.DB.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "atlas-auto",
-      "database_id": "A_REMPLACER_APRES_CREATION"
+      "database_id": "5776ac9f-b653-4fed-8e03-11003edbbbef"
     }
   ],
 
