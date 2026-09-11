@@ -1,3 +1,0 @@
-# Toutes les adresses sont gérées par React côté navigateur : on renvoie
-# index.html au lieu d une 404, sinon un accès direct à /entreprise échoue.
-/*    /index.html   200
