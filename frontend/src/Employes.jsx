@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import api from "./api.js";
 import {
-  C, u, Bouton, Champ, Etiquette, Alerte, BoutonSupprimer, dureeDepuisMinutes,
+  C, u, Bouton, Champ, Etiquette, Alerte, BoutonSupprimer,
 } from "./ui.jsx";
 
 const GRADES = ["Vendeur/Vendeuse", "Manager", "Co-patron", "Patron"];
@@ -35,11 +35,7 @@ export default function Employes({ moi, isMobile }) {
     }
   }
 
-  useEffect(() => {
-    recharger();
-    const t = setInterval(recharger, 30000);
-    return () => clearInterval(t);
-  }, []);
+  useEffect(() => { recharger(); }, []);
 
   async function creer(e) {
     e.preventDefault();
@@ -217,30 +213,6 @@ export default function Employes({ moi, isMobile }) {
         )}
       </div>
 
-      {/* ------------------------------------------------ en ligne */}
-      <div style={u.carte}>
-        <h2 style={u.titreCarte}>En ligne maintenant</h2>
-        <p style={u.aide}>Rafraîchi automatiquement toutes les 30 secondes.</p>
-        {connectes.length === 0 ? (
-          <div style={u.vide}>Personne n'est connecté.</div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {connectes.map((c) => {
-              const depuis = c.depuis ? Date.now() - new Date(String(c.depuis).replace(" ", "T") + "Z").getTime() : 0;
-              return (
-                <div key={c.id} style={u.ligne}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.vert, flex: "none" }} />
-                  <div style={{ fontWeight: 700 }}>{c.prenom} {c.nom}</div>
-                  <Etiquette ton={TON_GRADE[c.grade] || "gris"}>{c.grade}</Etiquette>
-                  <div style={{ marginLeft: "auto", color: C.vert, fontSize: 13, fontWeight: 600 }}>
-                    {dureeDepuisMinutes(depuis / 60000)}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
