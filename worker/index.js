@@ -706,6 +706,48 @@ on("GET", "/compta", "Co-patron", async (c) => {
     lignes,
   };
 });
+/** Les semaines déjà enregistrées, la plus récente d abord. */
+on("GET", "/compta/archives", "Co-patron", async (c) =>
+  c.db.tous(
+    `SELECT id, debut, fin, entrees, sorties, resultat, note, cree_par, cree_le
+       FROM comptas ORDER BY debut DESC, id DESC`,
+  ));
+
+/** Fige la période : les totaux sont recopiés, ils ne bougeront plus. */
+on("POST", "/compta/archives", "Co-patron", async (c) => {
+  const { debut, fin, entrees, sorties, resultat, lignes, note } = c.corps;
+  if (!debut || !fin) refus(400, "Période incomplète.");
+
+  const deja = await c.db.un(
+    "SELECT id FROM comptas WHERE debut = ? AND fin = ?", debut, fin,
+  );
+  if (deja) refus(409, "Cette période est déjà enregistrée.");
+
+  const { id } = await c.db.exec(
+    `INSERT INTO comptas (debut, fin, entrees, sorties, resultat, donnees, note, cree_par)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    debut, fin,
+    Math.round(Number(entrees) || 0),
+    Math.round(Number(sorties) || 0),
+    Math.round(Number(resultat) || 0),
+    JSON.stringify({ lignes: lignes || [] }),
+    String(note || ""),
+    `${c.employe.prenom} ${c.employe.nom}`,
+  );
+  return c.db.un("SELECT * FROM comptas WHERE id = ?", id);
+});
+
+on("GET", "/compta/archives/:id", "Co-patron", async (c) => {
+  const a = await c.db.un("SELECT * FROM comptas WHERE id = ?", c.params.id);
+  if (!a) refus(404, "Semaine introuvable.");
+  return { ...a, donnees: JSON.parse(a.donnees || "{}") };
+});
+
+on("DELETE", "/compta/archives/:id", "Co-patron", async (c) => {
+  await c.db.exec("DELETE FROM comptas WHERE id = ?", c.params.id);
+  return { fait: true };
+});
+
 // ===========================================================================
 // DÉPENSES
 // ===========================================================================

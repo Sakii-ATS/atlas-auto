@@ -146,6 +146,11 @@ export const api = {
     return get("/compta" + (s ? `?${s}` : ""));
   },
 
+  archivesCompta: () => get("/compta/archives"),
+  archiveCompta: (id) => get(`/compta/archives/${id}`),
+  archiverCompta: (a) => post("/compta/archives", a),
+  supprimerArchiveCompta: (id) => del(`/compta/archives/${id}`),
+
   // -------------------------------------------------------------- dépenses
   depenses: () => get("/depenses"),
   ajouterDepense: (d) => post("/depenses", d),

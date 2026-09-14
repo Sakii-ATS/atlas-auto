@@ -1167,10 +1167,10 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
   const [rechercheModele, setRechercheModele] = useState(catalogue[0]?.nom ?? "");
   const [aSupprimer, setASupprimer] = useState(null);
   const [envoiImage, setEnvoiImage] = useState(false);
-  const rachatAutorise = classeSuffit(form.clientClasse, modele?.classe);
   const [suggestionsOuvertes, setSuggestionsOuvertes] = useState(false);
 
   const modele = catalogue.find((c) => c.id === Number(form.modeleId));
+  const rachatAutorise = classeSuffit(form.clientClasse, modele?.classe);
   const prixBase = modele?.prixBase ?? 0;
   const suggestions = catalogue.filter((c) =>
     c.nom.toLowerCase().includes(rechercheModele.toLowerCase())

@@ -3,7 +3,9 @@
 
 -- employes (1)
 DELETE FROM employes;
-INSERT INTO employes (id, nom, prenom, grade, code, actif, connexions, cree_le) VALUES (1, 'Petit', 'Clovis', 'Patron', '56046', 1, 22, '2026-09-11 16:05:35');
+-- Le code ci-dessous est neutralise ('00000') : ce fichier part sur GitHub.
+-- La base en ligne garde le vrai code. Sur une base neuve, change-le dans Parametres.
+INSERT INTO employes (id, nom, prenom, grade, code, actif, connexions, cree_le) VALUES (1, 'Petit', 'Clovis', 'Patron', '00000', 1, 22, '2026-09-11 16:05:35');
 
 -- genres (11)
 DELETE FROM genres;
