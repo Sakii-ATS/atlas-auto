@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS catalogue (
   nom       TEXT    NOT NULL,
   prix_base INTEGER NOT NULL,
   genre     TEXT    NOT NULL,
-  classe    TEXT    NOT NULL DEFAULT ''   -- A | B | C, comme au PDM en jeu
+  classe    TEXT    NOT NULL DEFAULT '',  -- A | B | C, comme au PDM en jeu
+  origine   TEXT    NOT NULL DEFAULT 'concessionnaire'  -- concessionnaire | import
 );
 CREATE INDEX IF NOT EXISTS idx_catalogue_nom ON catalogue (nom);
 

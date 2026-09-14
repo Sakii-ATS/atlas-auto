@@ -6,6 +6,7 @@ import Photos from "./Photos.jsx";
 import Contrats from "./Contrats.jsx";
 import Salaires from "./Salaires.jsx";
 import Depenses from "./Depenses.jsx";
+import Compta from "./Compta.jsx";
 import VentesRealiseesApi from "./VentesRealisees.jsx";
 
 /* Convertit une ligne de l'API vers la forme attendue par les composants
@@ -1166,6 +1167,7 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
   const [rechercheModele, setRechercheModele] = useState(catalogue[0]?.nom ?? "");
   const [aSupprimer, setASupprimer] = useState(null);
   const [envoiImage, setEnvoiImage] = useState(false);
+  const rachatAutorise = classeSuffit(form.clientClasse, modele?.classe);
   const [suggestionsOuvertes, setSuggestionsOuvertes] = useState(false);
 
   const modele = catalogue.find((c) => c.id === Number(form.modeleId));
@@ -1194,6 +1196,13 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
   async function ajouterVehicule(e) {
     e.preventDefault();
     if (!modele) return;
+    if (form.clientNom.trim() && !rachatAutorise) {
+      onErreur?.(
+        `Rachat impossible : ce véhicule est de classe ${modele.classe}, ` +
+          `le vendeur est de classe ${form.clientClasse}.`,
+      );
+      return;
+    }
     try {
       await api.creerVehicule({
         modele: modele.nom,
@@ -1257,26 +1266,11 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
         <form onSubmit={ajouterVehicule} style={s.formCard}>
           <div style={s.formTitle}>Nouveau véhicule</div>
 
-          {peutImporter && (
-            <>
-              <label style={s.label}>Catégorie d'acquisition</label>
-              <div style={s.typeToggle}>
-                {TYPES_VEHICULE.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setForm({ ...form, type: t })}
-                    style={{
-                      ...s.typeToggleBtn,
-                      ...(form.type === t ? s.typeToggleBtnActive : {}),
-                    }}
-                  >
-                    {t === "Occasion" ? "Rachat (occasion)" : "Import"}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+          <div style={s.previewHint}>
+            Tout véhicule enregistré ici est un <strong>rachat à un joueur</strong>,
+            donc une occasion. Les imports sont ajoutés au catalogue en amont : un
+            import racheté redevient une occasion.
+          </div>
 
           <label style={s.label}>Modèle du véhicule</label>
           {catalogue.length > 0 ? (
@@ -1398,7 +1392,7 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
             placeholder="Ex : état impeccable, jantes custom, intérieur cuir..."
           />
 
-          {form.type === "Occasion" && (
+          {true && (
             <>
               <div style={s.formTitle2}>Le joueur qui nous vend le véhicule</div>
 
@@ -1428,6 +1422,25 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
                   <option key={c} value={c}>Classe {c}</option>
                 ))}
               </select>
+
+              {form.clientNom.trim() && modele?.classe && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    marginBottom: 10,
+                    background: rachatAutorise ? "rgba(97,181,120,0.08)" : "rgba(214,90,80,0.10)",
+                    border: `1px solid ${rachatAutorise ? "rgba(97,181,120,0.35)" : "rgba(214,90,80,0.5)"}`,
+                    fontSize: 12.5,
+                    color: rachatAutorise ? "#61B578" : "#D65A50",
+                    fontWeight: 600,
+                  }}
+                >
+                  {rachatAutorise
+                    ? `Véhicule classe ${modele.classe} · vendeur classe ${form.clientClasse} — rachat possible`
+                    : `Rachat impossible : un joueur de classe ${form.clientClasse} n'a pas pu acheter une ${modele.classe}.`}
+                </div>
+              )}
 
               <div style={s.previewHint}>
                 Renseigné, le rachat est enregistré dans « Ventes réalisées »
@@ -1468,7 +1481,11 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
             </div>
           </div>
 
-          <button type="submit" style={s.submitBtn}>
+          <button
+            type="submit"
+            style={{ ...s.submitBtn, ...(rachatAutorise ? {} : { opacity: 0.45, cursor: "not-allowed" }) }}
+            disabled={!rachatAutorise && !!form.clientNom.trim()}
+          >
             Enregistrer le véhicule
           </button>
         </form>
@@ -1533,9 +1550,10 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
 }
 
 function Catalogue({ catalogue, categories, onRefresh, onErreur, isMobile }) {
-  const [form, setForm] = useState({ nom: "", prixBase: "", genre: "" });
+  const [form, setForm] = useState({ nom: "", prixBase: "", genre: "", classe: "C", origine: "concessionnaire" });
   const [recherche, setRecherche] = useState("");
   const [filtreGenre, setFiltreGenre] = useState("Tous");
+  const [filtreOrigine, setFiltreOrigine] = useState("Tous");
   // Le prix tape reste local tant que le champ a le focus : on n envoie a
   // l API qu une fois, quand on quitte le champ.
   const [prixLocaux, setPrixLocaux] = useState({});
@@ -1550,8 +1568,9 @@ function Catalogue({ catalogue, categories, onRefresh, onErreur, isMobile }) {
     const q = recherche.trim().toLowerCase();
     return catalogue
       .filter((c) => (filtreGenre === "Tous" ? true : c.genre === filtreGenre))
+      .filter((c) => (filtreOrigine === "Tous" ? true : c.origine === filtreOrigine))
       .filter((c) => (q ? (c.nom || "").toLowerCase().includes(q) : true));
-  }, [catalogue, recherche, filtreGenre]);
+  }, [catalogue, recherche, filtreGenre, filtreOrigine]);
 
   async function ajouterModele(e) {
     e.preventDefault();
@@ -1562,8 +1581,10 @@ function Catalogue({ catalogue, categories, onRefresh, onErreur, isMobile }) {
         nom: form.nom.trim(),
         prixBase: Number(form.prixBase) || 0,
         genre: form.genre,
+        classe: form.classe,
+        origine: form.origine,
       });
-      setForm({ nom: "", prixBase: "", genre: form.genre });
+      setForm({ nom: "", prixBase: "", genre: form.genre, classe: form.classe, origine: form.origine });
       await onRefresh?.();
     } catch (err) {
       onErreur?.(err.message);
@@ -1644,7 +1665,28 @@ function Catalogue({ catalogue, categories, onRefresh, onErreur, isMobile }) {
             ))}
           </select>
 
-          <label style={s.label}>Prix de base (catalogue concessionnaire)</label>
+          <label style={s.label}>Classe</label>
+          <select
+            style={s.input}
+            value={form.classe}
+            onChange={(e) => setForm({ ...form, classe: e.target.value })}
+          >
+            {["C", "B", "A"].map((c) => (
+              <option key={c} value={c}>Classe {c}</option>
+            ))}
+          </select>
+
+          <label style={s.label}>Provenance</label>
+          <select
+            style={s.input}
+            value={form.origine}
+            onChange={(e) => setForm({ ...form, origine: e.target.value })}
+          >
+            <option value="concessionnaire">Concessionnaire</option>
+            <option value="import">Import</option>
+          </select>
+
+          <label style={s.label}>Prix de base</label>
           <input
             style={s.input}
             type="number"
@@ -1675,6 +1717,15 @@ function Catalogue({ catalogue, categories, onRefresh, onErreur, isMobile }) {
               placeholder="Rechercher un modèle…"
             />
             <select
+              style={{ ...s.input, width: isMobile ? "100%" : 170, margin: 0 }}
+              value={filtreOrigine}
+              onChange={(e) => setFiltreOrigine(e.target.value)}
+            >
+              <option value="Tous">Toutes provenances</option>
+              <option value="concessionnaire">Concessionnaire</option>
+              <option value="import">Import</option>
+            </select>
+            <select
               style={{ ...s.input, width: isMobile ? "100%" : 190, margin: 0 }}
               value={filtreGenre}
               onChange={(e) => setFiltreGenre(e.target.value)}
@@ -1694,6 +1745,11 @@ function Catalogue({ catalogue, categories, onRefresh, onErreur, isMobile }) {
               <div style={{ ...s.stockRow, ...(isMobile ? s.stockRowMobile : {}) }} key={c.id}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700 }}>{c.nom}</div>
+                  <span style={{ fontSize: 11, color: "#71767F" }}>
+                    {c.classe ? `Classe ${c.classe}` : "—"}
+                    {c.origine === "import" ? " · Import" : ""}
+                    {"  ·  "}
+                  </span>
                   <select
                     value={c.genre || ""}
                     onChange={(e) => changerGenre(c, e.target.value)}
@@ -2148,7 +2204,7 @@ export default function App() {
         api.parametres(),
       ]);
       setVehicles(v.map(depuisApi));
-      setCatalogue(c.map((m) => ({ id: m.id, nom: m.nom, prixBase: m.prix_base, genre: m.genre, classe: m.classe || "" })));
+      setCatalogue(c.map((m) => ({ id: m.id, nom: m.nom, prixBase: m.prix_base, genre: m.genre, classe: m.classe || "", origine: m.origine || "concessionnaire" })));
       setGenres(g);
       setCategories(g.map((x) => x.nom));
       setParametres({
@@ -2193,7 +2249,7 @@ export default function App() {
     if (["occasion", "import"].includes(tab) && !CAN_MANAGE_STOCK.includes(role)) setTab("vitrine");
     if (tab === "gestion" && !CAN_EDIT_VEHICLES.includes(role)) setTab("vitrine");
     if (["catalogue", "genres", "parametres"].includes(tab) && !CAN_MANAGE_CATALOGUE.includes(role)) setTab("vitrine");
-    if (["salaires", "depenses"].includes(tab) && !CAN_VIEW_FINANCES.includes(role)) setTab("vitrine");
+    if (["salaires", "depenses", "compta"].includes(tab) && !CAN_VIEW_FINANCES.includes(role)) setTab("vitrine");
     if (tab === "ventes-realisees" && !CAN_VIEW_SALES.includes(role)) setTab("vitrine");
   }, [role, moi]); // eslint-disable-line
 
@@ -2257,6 +2313,7 @@ export default function App() {
     { key: "gestion", label: "Gestion véhicules", visible: CAN_EDIT_VEHICLES.includes(role) },
     { key: "ventes-realisees", label: "Ventes réalisées", visible: CAN_VIEW_SALES.includes(role) },
     { key: "contrats", label: "Contrats", visible: true },
+    { key: "compta", label: "Compta", visible: CAN_VIEW_FINANCES.includes(role) },
     { key: "salaires", label: "Salaires", visible: CAN_VIEW_FINANCES.includes(role) },
     { key: "depenses", label: "Dépenses", visible: CAN_VIEW_FINANCES.includes(role) },
     { key: "catalogue", label: "Catalogue prix", visible: CAN_MANAGE_CATALOGUE.includes(role) },
@@ -2388,6 +2445,9 @@ export default function App() {
           ))}
 
         {tab === "contrats" && <Contrats moi={moi} isMobile={isMobile} />}
+
+        {tab === "compta" &&
+          (CAN_VIEW_FINANCES.includes(role) ? <Compta isMobile={isMobile} /> : <AccesRefuse />)}
 
         {tab === "salaires" &&
           (CAN_VIEW_FINANCES.includes(role) ? <Salaires moi={moi} isMobile={isMobile} /> : <AccesRefuse />)}

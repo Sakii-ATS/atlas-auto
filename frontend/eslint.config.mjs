@@ -12,6 +12,7 @@ export default [
         clearInterval: "readonly", Intl: "readonly", URLSearchParams: "readonly",
         alert: "readonly", location: "readonly", history: "readonly",
         createImageBitmap: "readonly", FileReader: "readonly", Blob: "readonly",
+        URL: "readonly", URLSearchParams: "readonly",
       },
     },
     rules: { "no-undef": "error" },

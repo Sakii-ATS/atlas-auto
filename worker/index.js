@@ -592,6 +592,121 @@ on("GET", "/salaires", "Co-patron", async (c) => {
 });
 
 // ===========================================================================
+// COMPTA — tout l argent de l entreprise au même endroit
+// ===========================================================================
+
+/**
+ * Ventes, rachats, dépenses et salaires sur une période, avec le résultat.
+ * `lignes` est un journal unifié : une entrée par opération, prête à exporter.
+ */
+on("GET", "/compta", "Co-patron", async (c) => {
+  const debut = c.query.get("debut") || "0000-01-01";
+  const fin = c.query.get("fin") || "9999-12-31";
+
+  const mouvements = await c.db.tous(
+    `SELECT type, modele, genre, prix_final, date,
+            client_nom, client_prenom, client_classe, vendeur_nom, vendeur_prenom
+       FROM mouvements WHERE date(date) BETWEEN ? AND ? ORDER BY date`,
+    debut, fin,
+  );
+  const depenses = await c.db.tous(
+    `SELECT libelle, categorie, montant, date, note, saisi_par
+       FROM depenses WHERE date BETWEEN ? AND ? ORDER BY date`,
+    debut, fin,
+  );
+
+  // Salaires : le même calcul que l onglet Salaires, sur la même période.
+  const p = await lireParametres(c.db);
+  const base = Math.round(Number(p.salaireBase) || 0);
+  const prime = Math.round(Number(p.primeParOperation) || 0);
+  const employes = await c.db.tous(
+    `SELECT e.id, e.nom, e.prenom, e.grade,
+            COALESCE(v.ventes, 0) AS ventes,
+            COALESCE(a.achats, 0) AS achats
+       FROM employes e
+       LEFT JOIN (SELECT employe_id, COUNT(*) ventes FROM mouvements
+                   WHERE type = 'vente' AND date(date) BETWEEN ? AND ? GROUP BY employe_id) v
+              ON v.employe_id = e.id
+       LEFT JOIN (SELECT employe_id, COUNT(*) achats FROM mouvements
+                   WHERE type = 'achat' AND date(date) BETWEEN ? AND ? GROUP BY employe_id) a
+              ON a.employe_id = e.id
+      WHERE e.actif = 1
+      ORDER BY e.nom`,
+    debut, fin, debut, fin,
+  );
+  const salaires = employes.map((e) => {
+    const operations = e.ventes + e.achats;
+    return { ...e, operations, salaire: base + operations * prime };
+  });
+
+  const ventes = mouvements.filter((m) => m.type === "vente");
+  const achats = mouvements.filter((m) => m.type === "achat");
+  const somme = (liste, champ) => liste.reduce((s, x) => s + (x[champ] || 0), 0);
+
+  const totalVentes = somme(ventes, "prix_final");
+  const totalAchats = somme(achats, "prix_final");
+  const totalDepenses = somme(depenses, "montant");
+  const totalSalaires = somme(salaires, "salaire");
+
+  // Le journal, dans l ordre chronologique. Entrée = ce qui rentre en caisse.
+  const jour = (d) => String(d || "").slice(0, 10);
+  const lignes = [
+    ...ventes.map((m) => ({
+      date: jour(m.date),
+      type: "Vente",
+      libelle: m.modele,
+      detail: `${m.client_prenom} ${m.client_nom}`.trim() +
+              (m.client_classe ? ` (classe ${m.client_classe})` : ""),
+      par: `${m.vendeur_prenom} ${m.vendeur_nom}`.trim(),
+      entree: m.prix_final,
+      sortie: 0,
+    })),
+    ...achats.map((m) => ({
+      date: jour(m.date),
+      type: "Rachat",
+      libelle: m.modele,
+      detail: `${m.client_prenom} ${m.client_nom}`.trim() +
+              (m.client_classe ? ` (classe ${m.client_classe})` : ""),
+      par: `${m.vendeur_prenom} ${m.vendeur_nom}`.trim(),
+      entree: 0,
+      sortie: m.prix_final,
+    })),
+    ...depenses.map((d) => ({
+      date: jour(d.date),
+      type: "Dépense",
+      libelle: d.libelle,
+      detail: d.categorie,
+      par: d.saisi_par,
+      entree: 0,
+      sortie: d.montant,
+    })),
+    ...salaires
+      .filter((s) => s.salaire > 0)
+      .map((s) => ({
+        // Sans date de fin choisie, le salaire est daté d aujourd hui.
+        date: jour(fin === "9999-12-31" ? new Date().toISOString() : fin),
+        type: "Salaire",
+        libelle: `${s.prenom} ${s.nom}`,
+        detail: `${s.grade} — ${s.operations} opération(s)`,
+        par: "",
+        entree: 0,
+        sortie: s.salaire,
+      })),
+  ].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+  return {
+    debut, fin,
+    ventes: { nombre: ventes.length, total: totalVentes },
+    achats: { nombre: achats.length, total: totalAchats },
+    depenses: { nombre: depenses.length, total: totalDepenses },
+    salaires: { nombre: salaires.length, total: totalSalaires, lignes: salaires },
+    entrees: totalVentes,
+    sorties: totalAchats + totalDepenses + totalSalaires,
+    resultat: totalVentes - totalAchats - totalDepenses - totalSalaires,
+    lignes,
+  };
+});
+// ===========================================================================
 // DÉPENSES
 // ===========================================================================
 
@@ -644,12 +759,13 @@ on("GET", "/catalogue", LIBRE, async (c) =>
   c.db.tous("SELECT * FROM catalogue ORDER BY nom"));
 
 on("POST", "/catalogue", "Co-patron", async (c) => {
-  const { nom, prixBase, genre, classe } = c.corps;
+  const { nom, prixBase, genre, classe, origine } = c.corps;
   if (!nom) refus(400, "Nom du modèle obligatoire.");
   const { id } = await c.db.exec(
-    "INSERT INTO catalogue (nom, prix_base, genre, classe) VALUES (?, ?, ?, ?)",
+    "INSERT INTO catalogue (nom, prix_base, genre, classe, origine) VALUES (?, ?, ?, ?, ?)",
     String(nom).trim(), Math.round(Number(prixBase) || 0), String(genre || ""),
     String(classe || "").toUpperCase(),
+    origine === "import" ? "import" : "concessionnaire",
   );
   return c.db.un("SELECT * FROM catalogue WHERE id = ?", id);
 });
@@ -662,12 +778,16 @@ on("PUT", "/catalogue", "Co-patron", async (c) => {
   const instructions = [c.db.prep("DELETE FROM catalogue", [])];
   for (const l of lignes) {
     instructions.push(
-      c.db.prep("INSERT INTO catalogue (nom, prix_base, genre, classe) VALUES (?, ?, ?, ?)", [
-        String(l.nom || "").trim(),
-        Math.round(Number(l.prixBase ?? l.prix_base) || 0),
-        String(l.genre || ""),
-        String(l.classe || "").toUpperCase(),
-      ]),
+      c.db.prep(
+        "INSERT INTO catalogue (nom, prix_base, genre, classe, origine) VALUES (?, ?, ?, ?, ?)",
+        [
+          String(l.nom || "").trim(),
+          Math.round(Number(l.prixBase ?? l.prix_base) || 0),
+          String(l.genre || ""),
+          String(l.classe || "").toUpperCase(),
+          l.origine === "import" ? "import" : "concessionnaire",
+        ],
+      ),
     );
   }
   // D1 limite la taille d'un lot : on découpe.
@@ -682,11 +802,12 @@ on("PATCH", "/catalogue/:id", "Co-patron", async (c) => {
   if (!m) refus(404, "Modèle introuvable.");
   const b = c.corps;
   await c.db.exec(
-    "UPDATE catalogue SET nom = ?, prix_base = ?, genre = ?, classe = ? WHERE id = ?",
+    "UPDATE catalogue SET nom = ?, prix_base = ?, genre = ?, classe = ?, origine = ? WHERE id = ?",
     b.nom ?? m.nom,
     b.prixBase === undefined ? m.prix_base : Math.round(Number(b.prixBase) || 0),
     b.genre ?? m.genre,
     b.classe === undefined ? m.classe : String(b.classe || "").toUpperCase(),
+    b.origine === undefined ? m.origine : (b.origine === "import" ? "import" : "concessionnaire"),
     m.id,
   );
   return c.db.un("SELECT * FROM catalogue WHERE id = ?", m.id);
@@ -752,6 +873,21 @@ on("POST", "/vehicules", "Vendeur/Vendeuse", async (c) => {
   );
   if (!fiche) refus(400, "Ce modèle n'est pas au catalogue de prix.");
 
+  // On ne rachète qu à quelqu un qui pouvait posséder le véhicule : sa classe
+  // doit être au moins celle de la voiture.
+  if (
+    categorie === "Occasion" &&
+    String(clientNom || "").trim() &&
+    !classeSuffit(clientClasse, fiche.classe)
+  ) {
+    refus(
+      403,
+      `Rachat impossible : ce véhicule est de classe ${fiche.classe}, ` +
+        `le vendeur est de classe ${String(clientClasse || "—").toUpperCase()}. ` +
+        `Il n a pas pu l acheter.`,
+    );
+  }
+
   const prix = await figerPrix(c.db, { categorie, prixBase: fiche.prix_base });
   const { id } = await c.db.exec(
     `INSERT INTO vehicules
@@ -799,8 +935,28 @@ on("PATCH", "/vehicules/:id", "Manager", async (c) => {
 });
 
 on("DELETE", "/vehicules/:id", "Manager", async (c) => {
+  const v = await c.db.un("SELECT image FROM vehicules WHERE id = ?", c.params.id);
   await c.db.exec("DELETE FROM vehicules WHERE id = ?", c.params.id);
-  return { fait: true };
+
+  // La photo part avec le véhicule — sauf si une vente ou un autre véhicule
+  // l affiche encore, sinon on trouerait un historique.
+  let photoSupprimee = false;
+  const cle = String(v?.image || "").startsWith("/api/images/")
+    ? v.image.slice("/api/images/".length)
+    : null;
+  if (cle) {
+    const encore = await c.db.un(
+      `SELECT
+         (SELECT COUNT(*) FROM vehicules  WHERE image = ?) +
+         (SELECT COUNT(*) FROM mouvements WHERE image = ?) AS n`,
+      v.image, v.image,
+    );
+    if (!encore?.n) {
+      await c.db.exec("DELETE FROM images WHERE cle = ?", cle);
+      photoSupprimee = true;
+    }
+  }
+  return { fait: true, photoSupprimee };
 });
 
 // ===========================================================================

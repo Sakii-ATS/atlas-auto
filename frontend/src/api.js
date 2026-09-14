@@ -137,6 +137,15 @@ export const api = {
     return get("/salaires" + (s ? `?${s}` : ""));
   },
 
+  // ---------------------------------------------------------------- compta
+  compta: (debut, fin) => {
+    const q = new URLSearchParams();
+    if (debut) q.set("debut", debut);
+    if (fin) q.set("fin", fin);
+    const s = q.toString();
+    return get("/compta" + (s ? `?${s}` : ""));
+  },
+
   // -------------------------------------------------------------- dépenses
   depenses: () => get("/depenses"),
   ajouterDepense: (d) => post("/depenses", d),
