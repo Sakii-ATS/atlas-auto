@@ -126,6 +126,9 @@ const PARAMETRES_DEFAUT = {
   salairePatron: "3500",
   primeParOperation: "250",
   soldeInitial: "0", // ce qu il y avait sur le compte avant qu on suive tout ici
+  // Réglage réservé au patron : laisse ou non corriger à la main la réduction
+  // et la marge au moment d enregistrer un véhicule.
+  prixLibres: "0",
 };
 
 async function lireParametres(db) {
@@ -144,6 +147,7 @@ async function lireParametres(db) {
     salairePatron: Number(out.salairePatron),
     primeParOperation: Number(out.primeParOperation),
     soldeInitial: Number(out.soldeInitial),
+    prixLibres: out.prixLibres === "1" || out.prixLibres === true,
   };
 }
 
@@ -207,20 +211,28 @@ const tranchesMarge = (db) =>
  *            prix catalogue.
  * Import   : vente = prix de base exactement, ni réduction ni marge.
  */
-async function figerPrix(db, { categorie, prixBase }) {
+async function figerPrix(db, { categorie, prixBase, reduction, marge }) {
   const base = Math.max(0, Math.round(Number(prixBase) || 0));
   if (categorie === "Import") {
     return { prixBase: base, reduction: 0, marge: 0, prixAchat: base, prixVente: base };
   }
-  const reduction = montantSelonTranche(base, await tranchesReduction(db));
-  const marge = montantSelonTranche(base, await tranchesMarge(db));
-  const prixAchat = Math.max(0, base - reduction);
+  // Une valeur saisie à la main l emporte sur la tranche. Le droit de la saisir
+  // est vérifié par l appelant, pas ici.
+  const donne = (v) => v !== undefined && v !== null && v !== "";
+  const remise = donne(reduction)
+    ? Math.max(0, Math.round(Number(reduction) || 0))
+    : montantSelonTranche(base, await tranchesReduction(db));
+  const benefice = donne(marge)
+    ? Math.max(0, Math.round(Number(marge) || 0))
+    : montantSelonTranche(base, await tranchesMarge(db));
+
+  const prixAchat = Math.max(0, base - remise);
   return {
     prixBase: base,
-    reduction,
-    marge,
+    reduction: remise,
+    marge: benefice,
     prixAchat,
-    prixVente: Math.min(prixAchat + marge, base),
+    prixVente: Math.min(prixAchat + benefice, base),
   };
 }
 
@@ -1079,7 +1091,7 @@ on("GET", "/vehicules", CONNECTE, async (c) => {
 
 on("POST", "/vehicules", "Vendeur/Vendeuse", async (c) => {
   const { modele, categorie, image, description,
-          clientNom, clientPrenom, clientClasse } = c.corps;
+          clientNom, clientPrenom, clientClasse, reduction, marge } = c.corps;
   if (!modele) refus(400, "Choisis un modèle.");
   if (!["Occasion", "Import"].includes(categorie)) {
     refus(400, "Catégorie attendue : Occasion ou Import.");
@@ -1109,7 +1121,16 @@ on("POST", "/vehicules", "Vendeur/Vendeuse", async (c) => {
     );
   }
 
-  const prix = await figerPrix(c.db, { categorie, prixBase: fiche.prix_base });
+  // Les montants saisis à la main ne sont pris en compte que si le patron a
+  // ouvert la saisie libre — sinon on retombe sur les tranches, quoi qu on
+  // reçoive.
+  const libre = (await lireParametres(c.db)).prixLibres;
+  const prix = await figerPrix(c.db, {
+    categorie,
+    prixBase: fiche.prix_base,
+    reduction: libre ? reduction : undefined,
+    marge: libre ? marge : undefined,
+  });
   const { id } = await c.db.exec(
     `INSERT INTO vehicules
        (modele, genre, classe, categorie, image, description, prix_base, reduction, marge, prix_achat, prix_vente, achete_par)
@@ -1148,10 +1169,35 @@ on("PATCH", "/vehicules/:id", "Manager", async (c) => {
   const v = await c.db.un("SELECT * FROM vehicules WHERE id = ?", c.params.id);
   if (!v) refus(404, "Véhicule introuvable.");
   const b = c.corps;
+
+  // Photo, description et statut : tout le monde à partir de Manager.
   await c.db.exec(
     "UPDATE vehicules SET image = ?, description = ?, statut = ? WHERE id = ?",
     b.image ?? v.image, b.description ?? v.description, b.statut ?? v.statut, v.id,
   );
+
+  // Toucher aux prix, c est réservé aux patrons.
+  if (b.reduction !== undefined || b.marge !== undefined) {
+    if (!auMoins(c.employe.grade, "Co-patron")) {
+      refus(403, "Seuls le patron et le co-patron peuvent corriger les prix d un véhicule.");
+    }
+    if (v.categorie === "Import") {
+      refus(400, "Un import se vend au prix du catalogue : il n a ni réduction ni marge.");
+    }
+    const prix = await figerPrix(c.db, {
+      categorie: v.categorie,
+      prixBase: v.prix_base,
+      reduction: b.reduction ?? v.reduction,
+      marge: b.marge ?? v.marge,
+    });
+    await c.db.exec(
+      `UPDATE vehicules
+          SET reduction = ?, marge = ?, prix_achat = ?, prix_vente = ?
+        WHERE id = ?`,
+      prix.reduction, prix.marge, prix.prixAchat, prix.prixVente, v.id,
+    );
+  }
+
   return c.db.un("SELECT * FROM vehicules WHERE id = ?", v.id);
 });
 
@@ -1480,6 +1526,15 @@ on("PUT", "/parametres", "Co-patron", async (c) => {
   ]) {
     if (b[cle] !== undefined) patch[cle] = b[cle];
   }
+
+  // Laisser corriger les prix à la main, c est le patron seul qui décide.
+  if (b.prixLibres !== undefined) {
+    if (c.employe.grade !== "Patron") {
+      refus(403, "Seul le patron peut activer ou couper la saisie libre des prix.");
+    }
+    patch.prixLibres = b.prixLibres ? "1" : "0";
+  }
+
   return ecrireParametres(c.db, patch);
 });
 

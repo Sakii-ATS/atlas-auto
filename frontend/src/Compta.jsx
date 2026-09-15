@@ -51,6 +51,189 @@ const TON_TYPE = {
 
 const TYPES = ["Tout", "Vente", "Rachat", "Dépense", "Salaire", "Dividende"];
 
+/**
+ * Le catalogue des feuilles du classeur : pour chacune, son nom, le type de
+ * ligne du journal qu elle contient, et ses colonnes. Tout part de là — la
+ * fabrication du fichier comme les cases à cocher de l écran.
+ */
+const FEUILLES = [
+  {
+    cle: "Résumé",
+    nom: "Résumé",
+    colonnes: [
+      { titre: "Poste", cle: "poste" },
+      { titre: "Nombre", cle: "nombre", type: "nombre" },
+      { titre: "Montant", cle: "montant", type: "argent" },
+    ],
+  },
+  {
+    cle: "Vente",
+    nom: "Ventes",
+    montant: "entree",
+    colonnes: [
+      { titre: "Date", cle: "date", type: "date" },
+      { titre: "Véhicule", cle: "libelle" },
+      { titre: "Client", cle: "detail" },
+      { titre: "Vendu par", cle: "par" },
+      { titre: "Encaissé", cle: "entree", type: "argent" },
+    ],
+  },
+  {
+    cle: "Rachat",
+    nom: "Rachats",
+    montant: "sortie",
+    colonnes: [
+      { titre: "Date", cle: "date", type: "date" },
+      { titre: "Véhicule", cle: "libelle" },
+      { titre: "Client", cle: "detail" },
+      { titre: "Racheté par", cle: "par" },
+      { titre: "Décaissé", cle: "sortie", type: "argent" },
+    ],
+  },
+  {
+    cle: "Dépense",
+    nom: "Dépenses",
+    montant: "sortie",
+    colonnes: [
+      { titre: "Date", cle: "date", type: "date" },
+      { titre: "Libellé", cle: "libelle" },
+      { titre: "Catégorie", cle: "detail" },
+      { titre: "Saisi par", cle: "par" },
+      { titre: "Montant", cle: "sortie", type: "argent" },
+    ],
+  },
+  {
+    cle: "Salaire",
+    nom: "Salaires",
+    montant: "sortie",
+    colonnes: [
+      { titre: "Date", cle: "date", type: "date" },
+      { titre: "Employé", cle: "libelle" },
+      { titre: "Détail", cle: "detail" },
+      { titre: "Salaire", cle: "sortie", type: "argent" },
+    ],
+  },
+  {
+    cle: "Dividende",
+    nom: "Dividendes",
+    montant: "sortie",
+    colonnes: [
+      { titre: "Date", cle: "date", type: "date" },
+      { titre: "Bénéficiaire", cle: "libelle" },
+      { titre: "Motif", cle: "detail" },
+      { titre: "Versé par", cle: "par" },
+      { titre: "Montant", cle: "sortie", type: "argent" },
+    ],
+  },
+  {
+    cle: "Journal",
+    nom: "Journal",
+    journal: true,
+    colonnes: [
+      { titre: "Date", cle: "date", type: "date" },
+      { titre: "Type", cle: "type" },
+      { titre: "Libellé", cle: "libelle" },
+      { titre: "Détail", cle: "detail" },
+      { titre: "Par", cle: "par" },
+      { titre: "Entrée", cle: "entree", type: "argent" },
+      { titre: "Sortie", cle: "sortie", type: "argent" },
+    ],
+  },
+];
+
+// Les feuilles qu on peut retirer du fichier (le Résumé reste toujours).
+const POSTES = FEUILLES.filter((f) => f.cle !== "Résumé");
+
+/**
+ * Fabrique les feuilles du classeur.
+ *
+ * `inclus`   : quelles feuilles partent dans le fichier.
+ * `colonnes` : quelles colonnes de chaque feuille, sous la forme
+ *              { Vente: { par: false } } pour sortir « Vendu par » des ventes.
+ *
+ * Une feuille décochée disparaît partout — son onglet, sa ligne du résumé, et
+ * elle ne compte plus dans les totaux. Dans ce cas on retire aussi le solde du
+ * compte : il ne voudrait plus rien dire si on a mis des sorties de côté.
+ */
+function feuillesDu(etat, inclus = {}, colonnes = {}) {
+  const veut = (cle) => inclus[cle] !== false;
+  const veutCol = (feuille, col) => colonnes[feuille]?.[col] !== false;
+
+  const toutes = etat.lignes || [];
+  const lignes = toutes.filter((l) => veut(l.type));
+  const de = (type) => (veut(type) ? lignes.filter((l) => l.type === type) : []);
+  const total = (l, champ) => l.reduce((s, x) => s + (Number(x[champ]) || 0), 0);
+
+  const entrees = total(lignes, "entree");
+  const sorties = total(lignes, "sortie");
+
+  // Seuls les postes qui portent de l argent changent les totaux. Retirer le
+  // Journal ne fausse rien : c est juste une autre vue des mêmes lignes.
+  const exclus = POSTES.filter((f) => f.montant && !veut(f.cle)).map((f) => f.nom);
+  const complet = exclus.length === 0;
+
+  return FEUILLES.map((f) => {
+    if (f.cle !== "Résumé" && !veut(f.cle)) return null;
+
+    const cols = f.colonnes.filter((c) => veutCol(f.cle, c.cle));
+    if (cols.length === 0) return null; // tout décoché : pas de feuille vide
+
+    // ------------------------------------------------------------- le résumé
+    if (f.cle === "Résumé") {
+      const ligne = (cle, label, champ) => {
+        if (!veut(cle)) return null;
+        const l = de(cle);
+        return { poste: label, nombre: l.length, montant: total(l, champ) };
+      };
+      return {
+        nom: f.nom,
+        colonnes: cols,
+        lignes: [
+          ligne("Vente", "Ventes (encaissé)", "entree"),
+          ligne("Rachat", "Rachats (décaissé)", "sortie"),
+          ligne("Dépense", "Dépenses (décaissé)", "sortie"),
+          ligne("Salaire", "Salaires (décaissé)", "sortie"),
+          ligne("Dividende", "Dividendes (décaissé)", "sortie"),
+        ].filter(Boolean),
+        // Les décaissés sont en négatif : la colonne s additionne de haut en
+        // bas et tombe juste sur le solde final.
+        pied: [
+          { poste: "Total encaissé", montant: entrees },
+          { poste: "Total décaissé", montant: -sorties },
+          { poste: "Résultat de la semaine", montant: entrees - sorties },
+          ...(complet
+            ? [
+                { poste: "Sur le compte avant", montant: etat.soldeAvant || 0 },
+                { poste: "SUR LE COMPTE APRÈS", montant: etat.soldeApres || 0 },
+              ]
+            : [{ poste: `Export partiel — hors ${exclus.join(", ").toLowerCase()}` }]),
+        ],
+      };
+    }
+
+    // ------------------------------------------------- le journal et le reste
+    const contenu = f.journal
+      ? // les zéros restent vides dans le journal, c'est plus lisible
+        lignes.map((l) => ({ ...l, entree: l.entree || "", sortie: l.sortie || "" }))
+      : de(f.cle);
+
+    // La ligne TOTAL : le mot dans la première colonne de texte visible, la
+    // somme dans la colonne d argent.
+    const pied = {};
+    const texte = cols.find((c) => !c.type);
+    if (texte) pied[texte.cle] = "TOTAL";
+    if (f.journal) {
+      if (veutCol(f.cle, "entree")) pied.entree = entrees;
+      if (veutCol(f.cle, "sortie")) pied.sortie = sorties;
+    } else if (veutCol(f.cle, f.montant)) {
+      pied[f.montant] = total(de(f.cle), f.montant);
+    }
+
+    return { nom: f.nom, colonnes: cols, lignes: contenu, pied: [pied] };
+  }).filter(Boolean);
+}
+
+
 /** Recalcule les postes à partir du journal (utile pour les archives). */
 function postes(lignes = []) {
   const poste = (type, champ) => {
@@ -66,121 +249,6 @@ function postes(lignes = []) {
   };
 }
 
-/** Les feuilles du classeur : un vrai tableau par catégorie. */
-function feuillesDu(etat) {
-  const lignes = etat.lignes || [];
-  const de = (type) => lignes.filter((l) => l.type === type);
-  const total = (l, champ) => l.reduce((s, x) => s + (Number(x[champ]) || 0), 0);
-
-  const ventes = de("Vente");
-  const rachats = de("Rachat");
-  const depenses = de("Dépense");
-  const salaires = de("Salaire");
-  const dividendes = de("Dividende");
-
-  const colDate = { titre: "Date", cle: "date", type: "date" };
-
-  return [
-    {
-      nom: "Résumé",
-      colonnes: [
-        { titre: "Poste", cle: "poste" },
-        { titre: "Nombre", cle: "nombre", type: "nombre" },
-        { titre: "Montant", cle: "montant", type: "argent" },
-      ],
-      lignes: [
-        { poste: "Ventes (encaissé)", nombre: ventes.length, montant: total(ventes, "entree") },
-        { poste: "Rachats (décaissé)", nombre: rachats.length, montant: total(rachats, "sortie") },
-        { poste: "Dépenses (décaissé)", nombre: depenses.length, montant: total(depenses, "sortie") },
-        { poste: "Salaires (décaissé)", nombre: salaires.length, montant: total(salaires, "sortie") },
-        { poste: "Dividendes (décaissé)", nombre: dividendes.length, montant: total(dividendes, "sortie") },
-      ],
-      // Les décaissés sont en négatif : la colonne s additionne de haut en bas
-      // et tombe juste sur le solde final.
-      pied: [
-        { poste: "Total encaissé", montant: etat.entrees || 0 },
-        { poste: "Total décaissé", montant: -(etat.sorties || 0) },
-        { poste: "Résultat de la semaine", montant: etat.resultat || 0 },
-        { poste: "Sur le compte avant", montant: etat.soldeAvant || 0 },
-        { poste: "SUR LE COMPTE APRÈS", montant: etat.soldeApres || 0 },
-      ],
-    },
-    {
-      nom: "Ventes",
-      colonnes: [
-        colDate,
-        { titre: "Véhicule", cle: "libelle" },
-        { titre: "Client", cle: "detail" },
-        { titre: "Vendu par", cle: "par" },
-        { titre: "Encaissé", cle: "entree", type: "argent" },
-      ],
-      lignes: ventes,
-      pied: [{ libelle: "TOTAL", entree: total(ventes, "entree") }],
-    },
-    {
-      nom: "Rachats",
-      colonnes: [
-        colDate,
-        { titre: "Véhicule", cle: "libelle" },
-        { titre: "Client", cle: "detail" },
-        { titre: "Racheté par", cle: "par" },
-        { titre: "Décaissé", cle: "sortie", type: "argent" },
-      ],
-      lignes: rachats,
-      pied: [{ libelle: "TOTAL", sortie: total(rachats, "sortie") }],
-    },
-    {
-      nom: "Dépenses",
-      colonnes: [
-        colDate,
-        { titre: "Libellé", cle: "libelle" },
-        { titre: "Catégorie", cle: "detail" },
-        { titre: "Saisi par", cle: "par" },
-        { titre: "Montant", cle: "sortie", type: "argent" },
-      ],
-      lignes: depenses,
-      pied: [{ libelle: "TOTAL", sortie: total(depenses, "sortie") }],
-    },
-    {
-      nom: "Salaires",
-      colonnes: [
-        colDate,
-        { titre: "Employé", cle: "libelle" },
-        { titre: "Détail", cle: "detail" },
-        { titre: "Salaire", cle: "sortie", type: "argent" },
-      ],
-      lignes: salaires,
-      pied: [{ libelle: "TOTAL", sortie: total(salaires, "sortie") }],
-    },
-    {
-      nom: "Dividendes",
-      colonnes: [
-        colDate,
-        { titre: "Bénéficiaire", cle: "libelle" },
-        { titre: "Motif", cle: "detail" },
-        { titre: "Versé par", cle: "par" },
-        { titre: "Montant", cle: "sortie", type: "argent" },
-      ],
-      lignes: dividendes,
-      pied: [{ libelle: "TOTAL", sortie: total(dividendes, "sortie") }],
-    },
-    {
-      nom: "Journal",
-      colonnes: [
-        colDate,
-        { titre: "Type", cle: "type" },
-        { titre: "Libellé", cle: "libelle" },
-        { titre: "Détail", cle: "detail" },
-        { titre: "Par", cle: "par" },
-        { titre: "Entrée", cle: "entree", type: "argent" },
-        { titre: "Sortie", cle: "sortie", type: "argent" },
-      ],
-      // les zéros restent vides, c'est plus lisible
-      lignes: lignes.map((l) => ({ ...l, entree: l.entree || "", sortie: l.sortie || "" })),
-      pied: [{ type: "TOTAL", entree: etat.entrees || 0, sortie: etat.sorties || 0 }],
-    },
-  ];
-}
 
 // ---------------------------------------------------------------- le composant
 
@@ -202,6 +270,9 @@ export default function Compta({ isMobile }) {
   const [dividendes, setDividendes] = useState([]);
   const [tresorerie, setTresorerie] = useState(null);
   const [detailSolde, setDetailSolde] = useState(false);
+  // tout est coché par défaut ; décocher sort la feuille ou la colonne du fichier
+  const [inclus, setInclus] = useState({});
+  const [colonnes, setColonnes] = useState({});
   const [form, setForm] = useState({ beneficiaire: "", montant: "", date: "", note: "" });
 
   async function recharger() {
@@ -252,7 +323,10 @@ export default function Compta({ isMobile }) {
 
   function exporter() {
     try {
-      telechargerClasseur(`compta-${vuePeriode.debut}-au-${vuePeriode.fin}.xlsx`, feuillesDu(vue));
+      telechargerClasseur(
+        `compta-${vuePeriode.debut}-au-${vuePeriode.fin}.xlsx`,
+        feuillesDu(vue, inclus, colonnes),
+      );
     } catch (e) {
       setErreur(e.message);
     }
@@ -537,10 +611,92 @@ export default function Compta({ isMobile }) {
           </div>
         )}
 
-        <p style={{ ...u.aide, margin: "10px 0 0" }}>
-          L'export est un classeur Excel avec une feuille par catégorie : Résumé, Ventes,
-          Rachats, Dépenses, Salaires, Dividendes et le Journal complet.
-        </p>
+        <div style={{ marginTop: 14, borderTop: `1px solid ${C.bord}`, paddingTop: 12 }}>
+          <div style={{ fontSize: 10.5, color: C.texte3, letterSpacing: 0.5, marginBottom: 8 }}>
+            À METTRE DANS LE FICHIER EXCEL
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {FEUILLES.map((f) => {
+              const toujours = f.cle === "Résumé"; // le résumé reste toujours
+              const on = toujours || inclus[f.cle] !== false;
+              return (
+                <div
+                  key={f.cle}
+                  style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}
+                >
+                  <button
+                    onClick={() => !toujours && setInclus({ ...inclus, [f.cle]: !on })}
+                    disabled={toujours}
+                    title={
+                      toujours
+                        ? "Le résumé est toujours dans le fichier"
+                        : on
+                          ? `La feuille ${f.nom} sera dans le fichier`
+                          : `La feuille ${f.nom} est exclue du fichier`
+                    }
+                    style={{
+                      background: on ? `${C.ambre}22` : "transparent",
+                      border: `1px solid ${on ? C.ambre : C.bord2}`,
+                      color: on ? C.texte : C.texte3,
+                      fontWeight: 700,
+                      fontSize: 12,
+                      padding: "6px 12px",
+                      borderRadius: 20,
+                      cursor: toujours ? "default" : "pointer",
+                      textDecoration: on ? "none" : "line-through",
+                      minWidth: 112,
+                      textAlign: "left",
+                      opacity: toujours ? 0.75 : 1,
+                    }}
+                  >
+                    {on ? "✓ " : ""}{f.nom}
+                  </button>
+
+                  {on &&
+                    f.colonnes.map((c) => {
+                      const vu = colonnes[f.cle]?.[c.cle] !== false;
+                      return (
+                        <button
+                          key={c.cle}
+                          onClick={() =>
+                            setColonnes({
+                              ...colonnes,
+                              [f.cle]: { ...(colonnes[f.cle] || {}), [c.cle]: !vu },
+                            })
+                          }
+                          title={
+                            vu
+                              ? `Colonne « ${c.titre} » gardée`
+                              : `Colonne « ${c.titre} » retirée`
+                          }
+                          style={{
+                            background: "transparent",
+                            border: `1px solid ${vu ? C.bord2 : "transparent"}`,
+                            color: vu ? C.texte2 : C.texte3,
+                            fontWeight: 600,
+                            fontSize: 11.5,
+                            padding: "4px 9px",
+                            borderRadius: 14,
+                            cursor: "pointer",
+                            textDecoration: vu ? "none" : "line-through",
+                            opacity: vu ? 1 : 0.55,
+                          }}
+                        >
+                          {c.titre}
+                        </button>
+                      );
+                    })}
+                </div>
+              );
+            })}
+          </div>
+          <p style={{ ...u.aide, margin: "12px 0 0" }}>
+            La grosse pastille, c'est la feuille ; les petites à côté, ses colonnes.
+            Tout ce que tu éteins sort du fichier. Une feuille décochée sort aussi des
+            totaux — pratique pour donner une compta sans les salaires. Dans ce cas le
+            solde du compte est retiré du résumé, il ne voudrait plus rien dire.
+          </p>
+        </div>
       </div>
 
       {/* ------------------------------------------- bandeau semaine enregistrée */}

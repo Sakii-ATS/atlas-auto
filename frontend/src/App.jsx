@@ -543,6 +543,7 @@ const SEED_PARAMETRES = {
   salairePatron: 3500,
   primeParOperation: 250,
   soldeInitial: 0,
+  prixLibres: false,
 };
 
 // Le fixe se règle grade par grade dans Paramètres : libellé + clé du réglage.
@@ -1180,6 +1181,9 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
   const [rechercheModele, setRechercheModele] = useState(catalogue[0]?.nom ?? "");
   const [aSupprimer, setASupprimer] = useState(null);
   const [envoiImage, setEnvoiImage] = useState(false);
+  // véhicule en cours de correction de prix : { id, reduction, marge }
+  const [retouche, setRetouche] = useState(null);
+  const peutRetoucherPrix = CAN_VIEW_FINANCES.includes(role);
   const [suggestionsOuvertes, setSuggestionsOuvertes] = useState(false);
 
   const modele = catalogue.find((c) => c.id === Number(form.modeleId));
@@ -1196,8 +1200,24 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
   }
   // La réduction et la marge ne s'appliquent qu'à l'occasion (rachat à un
   // joueur). Un import n'a ni l'une ni l'autre — prix de vente = prix de base.
-  const reductionApplicable = form.type === "Occasion" ? montantSelonTranche(prixBase, reductionTiers) : 0;
-  const margeApplicable = form.type === "Occasion" ? montantSelonTranche(prixBase, margeTiers) : 0;
+  const reductionTranche = form.type === "Occasion" ? montantSelonTranche(prixBase, reductionTiers) : 0;
+  const margeTranche = form.type === "Occasion" ? montantSelonTranche(prixBase, margeTiers) : 0;
+
+  // Quand le patron a ouvert la saisie libre, les deux montants deviennent
+  // modifiables. Tant qu on n y touche pas, ils suivent la tranche.
+  const libre = !!parametres.prixLibres && form.type === "Occasion";
+  const [reductionSaisie, setReductionSaisie] = useState(null);
+  const [margeSaisie, setMargeSaisie] = useState(null);
+
+  const reductionApplicable = libre && reductionSaisie !== null
+    ? Math.max(0, parseFloat(reductionSaisie) || 0)
+    : reductionTranche;
+  const margeApplicable = libre && margeSaisie !== null
+    ? Math.max(0, parseFloat(margeSaisie) || 0)
+    : margeTranche;
+
+  const modifie =
+    libre && (reductionApplicable !== reductionTranche || margeApplicable !== margeTranche);
 
   const preview = useMemo(() => {
     const prixAchat = prixBase - reductionApplicable;
@@ -1225,7 +1245,10 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
         clientNom: form.clientNom,
         clientPrenom: form.clientPrenom,
         clientClasse: form.clientClasse,
+        ...(modifie ? { reduction: reductionApplicable, marge: margeApplicable } : {}),
       });
+      setReductionSaisie(null);
+      setMargeSaisie(null);
       setForm({
         modeleId: catalogue[0]?.id ?? "",
         type: "Occasion",
@@ -1258,6 +1281,21 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
     setASupprimer(null);
     try {
       await api.supprimerVehicule(id);
+      onRefresh?.();
+    } catch (e) {
+      onErreur?.(e.message);
+    }
+  }
+
+  /** Corriger les prix d un véhicule déjà enregistré — patrons seulement. */
+  async function enregistrerRetouche() {
+    if (!retouche) return;
+    try {
+      await api.majVehicule(retouche.id, {
+        reduction: Math.max(0, parseFloat(retouche.reduction) || 0),
+        marge: Math.max(0, parseFloat(retouche.marge) || 0),
+      });
+      setRetouche(null);
       onRefresh?.();
     } catch (e) {
       onErreur?.(e.message);
@@ -1465,23 +1503,73 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
           <label style={s.label}>Prix de base (fixé par le catalogue)</label>
           <input style={{ ...s.input, opacity: 0.6 }} value={money(prixBase)} disabled />
 
-          <div style={s.previewBox}>
-            <div style={s.previewRow}>
-              <span>Réduction appliquée (selon tranche de prix)</span>
-              <strong>
-                {form.type === "Occasion" ? `-${money(reductionApplicable)}` : "— (import)"}
-              </strong>
-            </div>
-            <div style={s.previewRow}>
-              <span>Marge appliquée (selon tranche de prix)</span>
-              <strong>{form.type === "Occasion" ? `+${money(margeApplicable)}` : "— (import)"}</strong>
-            </div>
-          </div>
-          <div style={s.previewHint}>
-            La réduction et la marge viennent des tranches de prix
-            configurées dans l'onglet "Paramètres". Le kilométrage sera
-            renseigné par le vendeur au moment de la vente.
-          </div>
+          {libre ? (
+            <>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 130 }}>
+                  <label style={s.label}>Réduction ($)</label>
+                  <input
+                    style={s.input}
+                    type="number"
+                    min="0"
+                    value={reductionSaisie ?? reductionTranche}
+                    onChange={(e) => setReductionSaisie(e.target.value)}
+                  />
+                </div>
+                <div style={{ flex: 1, minWidth: 130 }}>
+                  <label style={s.label}>Marge ($)</label>
+                  <input
+                    style={s.input}
+                    type="number"
+                    min="0"
+                    value={margeSaisie ?? margeTranche}
+                    onChange={(e) => setMargeSaisie(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div style={s.previewHint}>
+                {modifie ? (
+                  <>
+                    Montants corrigés à la main. La tranche disait{" "}
+                    -{money(reductionTranche)} et +{money(margeTranche)}.{" "}
+                    <button
+                      type="button"
+                      onClick={() => { setReductionSaisie(null); setMargeSaisie(null); }}
+                      style={{
+                        background: "none", border: "none", padding: 0,
+                        color: "#C9962F", cursor: "pointer", font: "inherit",
+                        textDecoration: "underline",
+                      }}
+                    >
+                      Revenir à la tranche
+                    </button>
+                  </>
+                ) : (
+                  "Pré-remplis depuis les tranches de prix de l'onglet « Paramètres ». Tu peux les corriger pour ce véhicule."
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={s.previewBox}>
+                <div style={s.previewRow}>
+                  <span>Réduction appliquée (selon tranche de prix)</span>
+                  <strong>
+                    {form.type === "Occasion" ? `-${money(reductionApplicable)}` : "— (import)"}
+                  </strong>
+                </div>
+                <div style={s.previewRow}>
+                  <span>Marge appliquée (selon tranche de prix)</span>
+                  <strong>{form.type === "Occasion" ? `+${money(margeApplicable)}` : "— (import)"}</strong>
+                </div>
+              </div>
+              <div style={s.previewHint}>
+                La réduction et la marge viennent des tranches de prix
+                configurées dans l'onglet "Paramètres". Le kilométrage sera
+                renseigné par le vendeur au moment de la vente.
+              </div>
+            </>
+          )}
 
           <div style={s.previewBox}>
             <div style={s.previewRow}>
@@ -1526,6 +1614,25 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 6 }}>
+                    {peutRetoucherPrix && v.type !== "Import" && (
+                      <button
+                        style={{
+                          ...s.statutBtn,
+                          ...(retouche?.id === v.id
+                            ? { borderColor: "#C9962F", color: "#C9962F" }
+                            : {}),
+                        }}
+                        onClick={() =>
+                          setRetouche(
+                            retouche?.id === v.id
+                              ? null
+                              : { id: v.id, reduction: v.reduction ?? 0, marge: v.marge ?? 0 },
+                          )
+                        }
+                      >
+                        {retouche?.id === v.id ? "Fermer" : "Modifier"}
+                      </button>
+                    )}
                     <button
                       style={{
                         ...s.statutBtn,
@@ -1552,6 +1659,68 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
                       {aSupprimer === v.id ? "Confirmer ?" : "Supprimer"}
                     </button>
                   </div>
+
+                  {retouche?.id === v.id && (
+                    <div
+                      style={{
+                        flexBasis: "100%",
+                        marginTop: 10,
+                        paddingTop: 12,
+                        borderTop: "1px solid rgba(255,255,255,.08)",
+                        display: "flex",
+                        gap: 12,
+                        alignItems: "flex-end",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 110 }}>
+                        <label style={s.label}>Réduction ($)</label>
+                        <input
+                          style={s.input}
+                          type="number"
+                          min="0"
+                          value={retouche.reduction}
+                          onChange={(e) => setRetouche({ ...retouche, reduction: e.target.value })}
+                        />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 110 }}>
+                        <label style={s.label}>Marge ($)</label>
+                        <input
+                          style={s.input}
+                          type="number"
+                          min="0"
+                          value={retouche.marge}
+                          onChange={(e) => setRetouche({ ...retouche, marge: e.target.value })}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        style={{ ...s.submitBtn, width: "auto", marginTop: 0, padding: "10px 18px" }}
+                        onClick={enregistrerRetouche}
+                      >
+                        Enregistrer
+                      </button>
+                      <div style={{ ...s.previewHint, flexBasis: "100%", margin: 0 }}>
+                        Nouveau prix d'achat{" "}
+                        <strong>
+                          {money(
+                            Math.max(0, v.prixBase - (parseFloat(retouche.reduction) || 0)),
+                          )}
+                        </strong>
+                        , prix de vente{" "}
+                        <strong style={{ color: "#F2A93B" }}>
+                          {money(
+                            Math.min(
+                              Math.max(0, v.prixBase - (parseFloat(retouche.reduction) || 0)) +
+                                (parseFloat(retouche.marge) || 0),
+                              v.prixBase,
+                            ),
+                          )}
+                        </strong>
+                        . Le prix de vente ne peut pas dépasser le prix catalogue.
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -2031,6 +2200,8 @@ function Parametres({ parametres, setParametres, reductionTiers, setReductionTie
   );
   const [primeParOperation, setPrimeParOperation] = useState(String(parametres.primeParOperation ?? 250));
   const [soldeInitial, setSoldeInitial] = useState(String(parametres.soldeInitial ?? 0));
+  const [prixLibres, setPrixLibres] = useState(!!parametres.prixLibres);
+  const estPatron = moi?.grade === "Patron";
 
   const [etat, setEtat] = useState("");
 
@@ -2042,6 +2213,8 @@ function Parametres({ parametres, setParametres, reductionTiers, setReductionTie
       kmMontant: parseFloat(kmMontant) || 0,
       primeParOperation: Math.max(0, parseFloat(primeParOperation) || 0),
       soldeInitial: parseFloat(soldeInitial) || 0,
+      // seul le patron a le droit d envoyer ce réglage — le serveur refuse les autres
+      ...(estPatron ? { prixLibres } : {}),
       ...Object.fromEntries(
         PAIE_PAR_GRADE.map(([, cle]) => [cle, Math.max(0, parseFloat(fixes[cle]) || 0)]),
       ),
@@ -2148,6 +2321,34 @@ function Parametres({ parametres, setParametres, reductionTiers, setReductionTie
           rachat. Ex. un vendeur à 3 500 $ qui a fait 4 opérations touche
           3 500 + 4 × 250 = 4 500 $. Le détail par employé est dans l'onglet
           "Salaires".
+        </div>
+
+        <div style={s.formTitle2}>Prix des véhicules</div>
+        <label
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            cursor: estPatron ? "pointer" : "not-allowed",
+            opacity: estPatron ? 1 : 0.55,
+            margin: "4px 0 2px",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={prixLibres}
+            disabled={!estPatron}
+            onChange={(e) => setPrixLibres(e.target.checked)}
+            style={{ marginTop: 3, accentColor: "#C9962F", width: 16, height: 16 }}
+          />
+          <span style={{ fontSize: 13, color: "#D8DBE2" }}>
+            Laisser corriger la réduction et la marge à la main
+          </span>
+        </label>
+        <div style={s.previewHint}>
+          {estPatron
+            ? "Coché, les employés peuvent changer les deux montants au moment d'enregistrer un véhicule ; décoché, les tranches de prix s'imposent et les champs sont verrouillés. Le serveur ignore toute valeur envoyée quand c'est décoché."
+            : "Réglage réservé au patron. Demande-lui de l'activer si tu as besoin de corriger un prix à la main."}
         </div>
 
         <div style={s.formTitle2}>Compte de l'entreprise</div>
@@ -2267,6 +2468,7 @@ export default function App() {
         salairePatron: p.salairePatron,
         primeParOperation: p.primeParOperation,
         soldeInitial: p.soldeInitial,
+        prixLibres: !!p.prixLibres,
       });
       setReductionTiers(p.tranchesReduction || []);
       setMargeTiers(p.tranchesMarge || []);
@@ -2767,7 +2969,7 @@ const s = {
   },
   modalActions: { display: "flex", gap: 10 },
   stockList: { display: "flex", flexDirection: "column", gap: 10 },
-  stockRow: { display: "flex", alignItems: "center", gap: 14, background: "#1B1E24", border: "1px solid #24272E", borderRadius: 12, padding: 10 },
+  stockRow: { display: "flex", alignItems: "center", gap: 14, background: "#1B1E24", border: "1px solid #24272E", borderRadius: 12, padding: 10, flexWrap: "wrap" },
   stockRowMobile: { flexWrap: "wrap" },
   stockThumb: { width: 64, height: 48, objectFit: "cover", borderRadius: 8 },
   stockMeta: { fontSize: 12, color: "#9CA0A8", marginTop: 3 },
