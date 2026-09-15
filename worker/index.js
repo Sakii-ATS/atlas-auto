@@ -683,6 +683,40 @@ on("GET", "/compta", "Co-patron", async (c) => {
   const achats = mouvements.filter((m) => m.type === "achat");
   const somme = (liste, champ) => liste.reduce((s, x) => s + (x[champ] || 0), 0);
 
+  // Ce qu il y avait sur le compte juste avant le début de la période : le
+  // solde de départ, plus tout ce qui s est passé avant. Comme pour la
+  // trésorerie, les salaires ne comptent que pour les semaines déjà figées.
+  const avant = await c.db.un(
+    `SELECT
+       COALESCE((SELECT SUM(prix_final) FROM mouvements
+                  WHERE type = 'vente' AND date(date) < ?), 0) AS ventes,
+       COALESCE((SELECT SUM(prix_final) FROM mouvements
+                  WHERE type = 'achat' AND date(date) < ?), 0) AS achats,
+       COALESCE((SELECT SUM(montant) FROM depenses   WHERE date < ?), 0) AS depenses,
+       COALESCE((SELECT SUM(montant) FROM dividendes WHERE date < ?), 0) AS dividendes`,
+    debut, debut, debut, debut,
+  );
+  const archivesAvant = await c.db.tous(
+    "SELECT donnees FROM comptas WHERE fin < ?", debut,
+  );
+  let salairesAvant = 0;
+  for (const a of archivesAvant) {
+    try {
+      for (const l of JSON.parse(a.donnees || "{}").lignes || []) {
+        if (l.type === "Salaire") salairesAvant += Number(l.sortie) || 0;
+      }
+    } catch {
+      // une archive illisible ne doit pas casser le calcul
+    }
+  }
+  const soldeAvant =
+    Math.round(Number(p.soldeInitial) || 0) +
+    (Number(avant.ventes) || 0) -
+    (Number(avant.achats) || 0) -
+    (Number(avant.depenses) || 0) -
+    (Number(avant.dividendes) || 0) -
+    salairesAvant;
+
   const totalVentes = somme(ventes, "prix_final");
   const totalAchats = somme(achats, "prix_final");
   const totalDepenses = somme(depenses, "montant");
@@ -755,6 +789,9 @@ on("GET", "/compta", "Co-patron", async (c) => {
     sorties: totalAchats + totalDepenses + totalSalaires + totalDividendes,
     resultat:
       totalVentes - totalAchats - totalDepenses - totalSalaires - totalDividendes,
+    soldeAvant,
+    soldeApres:
+      soldeAvant + totalVentes - totalAchats - totalDepenses - totalSalaires - totalDividendes,
     lignes,
   };
 });
@@ -816,7 +853,8 @@ on("GET", "/compta/archives", "Co-patron", async (c) =>
 
 /** Fige la période : les totaux sont recopiés, ils ne bougeront plus. */
 on("POST", "/compta/archives", "Co-patron", async (c) => {
-  const { debut, fin, entrees, sorties, resultat, lignes, note } = c.corps;
+  const { debut, fin, entrees, sorties, resultat, lignes, note, soldeAvant, soldeApres } =
+    c.corps;
   if (!debut || !fin) refus(400, "Période incomplète.");
 
   const deja = await c.db.un(
@@ -831,7 +869,11 @@ on("POST", "/compta/archives", "Co-patron", async (c) => {
     Math.round(Number(entrees) || 0),
     Math.round(Number(sorties) || 0),
     Math.round(Number(resultat) || 0),
-    JSON.stringify({ lignes: lignes || [] }),
+    JSON.stringify({
+      lignes: lignes || [],
+      soldeAvant: Math.round(Number(soldeAvant) || 0),
+      soldeApres: Math.round(Number(soldeApres) || 0),
+    }),
     String(note || ""),
     `${c.employe.prenom} ${c.employe.nom}`,
   );

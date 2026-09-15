@@ -95,10 +95,14 @@ function feuillesDu(etat) {
         { poste: "Salaires (décaissé)", nombre: salaires.length, montant: total(salaires, "sortie") },
         { poste: "Dividendes (décaissé)", nombre: dividendes.length, montant: total(dividendes, "sortie") },
       ],
+      // Les décaissés sont en négatif : la colonne s additionne de haut en bas
+      // et tombe juste sur le solde final.
       pied: [
         { poste: "Total encaissé", montant: etat.entrees || 0 },
-        { poste: "Total décaissé", montant: etat.sorties || 0 },
-        { poste: "RÉSULTAT", montant: etat.resultat || 0 },
+        { poste: "Total décaissé", montant: -(etat.sorties || 0) },
+        { poste: "Résultat de la semaine", montant: etat.resultat || 0 },
+        { poste: "Sur le compte avant", montant: etat.soldeAvant || 0 },
+        { poste: "SUR LE COMPTE APRÈS", montant: etat.soldeApres || 0 },
       ],
     },
     {
@@ -229,6 +233,8 @@ export default function Compta({ isMobile }) {
         entrees: ouverte.entrees,
         sorties: ouverte.sorties,
         resultat: ouverte.resultat,
+        soldeAvant: ouverte.donnees?.soldeAvant ?? 0,
+        soldeApres: ouverte.donnees?.soldeApres ?? 0,
         lignes: ouverte.donnees?.lignes || [],
       }
     : etat;
@@ -293,6 +299,8 @@ export default function Compta({ isMobile }) {
         entrees: etat.entrees,
         sorties: etat.sorties,
         resultat: etat.resultat,
+        soldeAvant: etat.soldeAvant,
+        soldeApres: etat.soldeApres,
         lignes: etat.lignes,
       });
       const finie = libellePeriode(periode);
@@ -605,9 +613,16 @@ export default function Compta({ isMobile }) {
         }}
       >
         <div style={{ fontSize: 13, color: C.texte3 }}>
-          {argent(vue?.entrees)} encaissés
-          {"  −  "}
-          {argent(vue?.sorties)} décaissés
+          <div>
+            {argent(vue?.entrees)} encaissés
+            {"  −  "}
+            {argent(vue?.sorties)} décaissés
+          </div>
+          <div style={{ marginTop: 6, fontSize: 12.5 }}>
+            Compte : <strong style={{ color: C.texte2 }}>{argent(vue?.soldeAvant)}</strong> avant
+            {" → "}
+            <strong style={{ color: C.texte2 }}>{argent(vue?.soldeApres)}</strong> après
+          </div>
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 10.5, color: C.texte3, letterSpacing: 0.5 }}>RÉSULTAT</div>
