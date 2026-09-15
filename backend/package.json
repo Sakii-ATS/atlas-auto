@@ -1,7 +1,7 @@
 {
   "name": "atlas-auto-api",
   "version": "1.0.0",
-  "description": "API Atlas Auto — employes, vehicules, ventes, contrats, salaires, depenses",
+  "description": "API Vapid Auto — employes, vehicules, ventes, contrats, salaires, depenses",
   "type": "module",
   "main": "src/server.js",
   "scripts": {

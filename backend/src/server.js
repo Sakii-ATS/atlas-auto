@@ -26,7 +26,7 @@ const erreur = (res, code, message) => res.status(code).json({ erreur: message }
 const route = (fn) => (req, res) => {
   try { fn(req, res); }
   catch (e) {
-    console.error("[atlas]", req.method, req.path, e.message);
+    console.error("[vapid]", req.method, req.path, e.message);
     erreur(res, 500, e.message || "Erreur interne.");
   }
 };
@@ -402,7 +402,7 @@ r.post("/vehicules", exige("Vendeur/Vendeuse"), route((req, res) => {
       try {
         contrat = fabriquerContrat({ modele: modeleContrat, mouvement, employe: req.employe });
       } catch (e) {
-        console.error("[atlas] contrat de rachat impossible :", e.message);
+        console.error("[vapid] contrat de rachat impossible :", e.message);
       }
     }
   }
@@ -506,7 +506,7 @@ r.post("/mouvements", exige("Vendeur/Vendeuse"), route((req, res) => {
       try {
         contrat = fabriquerContrat({ modele, mouvement, employe: req.employe });
       } catch (e) {
-        console.error("[atlas] contrat automatique impossible :", e.message);
+        console.error("[vapid] contrat automatique impossible :", e.message);
       }
     }
   }
@@ -707,8 +707,8 @@ r.put("/tranches/marge", exige("Co-patron"), route(remplacerTranches("tranches_m
 // ===========================================================================
 
 app.use("/api", r);
-app.get("/api", (_req, res) => res.json({ service: "Atlas Auto", version: 1 }));
+app.get("/api", (_req, res) => res.json({ service: "Vapid Auto", version: 1 }));
 app.use((_req, res) => res.status(404).json({ erreur: "Route inconnue." }));
 
 const PORT = Number(process.env.PORT) || 3001;
-app.listen(PORT, () => console.log(`[atlas] API sur http://localhost:${PORT}/api`));
+app.listen(PORT, () => console.log(`[vapid] API sur http://localhost:${PORT}/api`));

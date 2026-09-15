@@ -1,4 +1,4 @@
--- Données Atlas Auto exportées depuis la base locale.
+-- Données Vapid Auto exportées depuis la base locale.
 -- À appliquer APRÈS 0001_schema.sql.
 
 -- employes (1)

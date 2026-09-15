@@ -1,5 +1,5 @@
 -- ===========================================================================
--- Atlas Auto — schéma de la base
+-- Vapid Auto — schéma de la base
 -- SQLite. Toutes les tables sont créées au démarrage si elles n'existent pas.
 -- ===========================================================================
 

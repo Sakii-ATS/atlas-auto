@@ -1,6 +1,6 @@
-# Atlas Auto — API
+# Vapid Auto — API
 
-Backend autonome pour le site Atlas Auto. Node + Express + SQLite.
+Backend autonome pour le site Vapid Auto. Node + Express + SQLite.
 Aucun service externe, aucune base à héberger : la base est un fichier.
 
 ## Démarrer

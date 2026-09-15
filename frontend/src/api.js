@@ -1,5 +1,5 @@
 // ===========================================================================
-// Client de l'API Atlas Auto.
+// Client de l'API Vapid Auto.
 // Le jeton de session est gardé dans le navigateur : on reste connecté
 // après un rafraîchissement de la page.
 // ===========================================================================

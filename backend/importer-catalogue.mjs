@@ -1,5 +1,5 @@
 // ===========================================================================
-// Importe le catalogue de prix de base dans la base Atlas Auto.
+// Importe le catalogue de prix de base dans la base Vapid Auto.
 // Les modeles sont lus dans src/App.jsx (tableau SEED_CATALOGUE), puis
 // envoyes en une seule fois a l API : PUT /api/catalogue.
 //

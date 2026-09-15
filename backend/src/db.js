@@ -41,7 +41,7 @@ const PARAMETRES_DEFAUT = {
   reductionMaxVente: "15",
   kmIntervalle: "10000",
   kmMontant: "500",
-  nomEntreprise: "ATLAS AUTO",
+  nomEntreprise: "VAPID AUTO",
   // Paie : un fixe par employé sur la période, plus une prime par opération
   // (une vente ou un rachat comptent pareil).
   salaireBase: "3500",
@@ -98,8 +98,8 @@ export function amorcer() {
       "Patron",
       code,
     );
-    console.log(`[atlas] compte patron créé — ${prenom} ${nom}, code ${code}`);
-    console.log("[atlas] change-le depuis Paramètres dès la première connexion.");
+    console.log(`[vapid] compte patron créé — ${prenom} ${nom}, code ${code}`);
+    console.log("[vapid] change-le depuis Paramètres dès la première connexion.");
   }
 
   if (un("SELECT COUNT(*) n FROM genres").n === 0) {

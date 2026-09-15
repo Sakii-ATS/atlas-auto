@@ -1,5 +1,5 @@
 // ===========================================================================
-// Atlas Auto — toute l'API dans un seul fichier, pour Cloudflare Workers.
+// Vapid Auto — toute l'API dans un seul fichier, pour Cloudflare Workers.
 //
 // Le Worker ne répond qu'aux adresses commençant par /api (voir
 // wrangler.jsonc, "run_worker_first"). Tout le reste est servi comme fichier
@@ -109,7 +109,7 @@ const PARAMETRES_DEFAUT = {
   reductionMaxVente: "15",
   kmIntervalle: "10000",
   kmMontant: "500",
-  nomEntreprise: "ATLAS AUTO",
+  nomEntreprise: "VAPID AUTO",
   salaireBase: "3500",
   primeParOperation: "250",
 };
@@ -357,7 +357,7 @@ async function contratAutomatique(db, { type, mouvement, employe }) {
   try {
     return await fabriquerContrat(db, { modele, mouvement, employe });
   } catch (e) {
-    console.error("[atlas] contrat automatique impossible :", e.message);
+    console.error("[vapid] contrat automatique impossible :", e.message);
     return null;
   }
 }
@@ -1341,7 +1341,7 @@ export default {
     if (!url.pathname.startsWith("/api")) return env.ASSETS.fetch(request);
 
     const chemin = url.pathname.slice(4) || "/";
-    if (chemin === "/") return json({ service: "Atlas Auto", version: VERSION });
+    if (chemin === "/") return json({ service: "Vapid Auto", version: VERSION });
 
     const db = bd(env);
 
@@ -1408,7 +1408,7 @@ export default {
       return json(resultat ?? { fait: true });
     } catch (e) {
       if (e instanceof Erreur) return json({ erreur: e.message }, e.code);
-      console.error("[atlas]", request.method, chemin, e?.stack || e);
+      console.error("[vapid]", request.method, chemin, e?.stack || e);
       return json({ erreur: e?.message || "Erreur interne." }, 500);
     }
   },
