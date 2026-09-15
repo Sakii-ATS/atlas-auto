@@ -537,8 +537,21 @@ const SEED_PARAMETRES = {
   kmIntervalle: 10000,
   kmMontant: 500,
   salaireBase: 3500,
+  salaireVendeur: 3500,
+  salaireManager: 3500,
+  salaireCoPatron: 3500,
+  salairePatron: 3500,
   primeParOperation: 250,
+  soldeInitial: 0,
 };
+
+// Le fixe se règle grade par grade dans Paramètres : libellé + clé du réglage.
+const PAIE_PAR_GRADE = [
+  ["Vendeur / Vendeuse", "salaireVendeur"],
+  ["Manager", "salaireManager"],
+  ["Co-patron", "salaireCoPatron"],
+  ["Patron", "salairePatron"],
+];
 
 // Tranches de réduction et de marge, en MONTANT FIXE ($) selon le prix de
 // base (catalogue) du véhicule — plus la voiture est chère, plus la tranche
@@ -2007,8 +2020,17 @@ function Parametres({ parametres, setParametres, reductionTiers, setReductionTie
   const [reductionMaxVente, setReductionMaxVente] = useState(String(parametres.reductionMaxVente));
   const [kmIntervalle, setKmIntervalle] = useState(String(parametres.kmIntervalle));
   const [kmMontant, setKmMontant] = useState(String(parametres.kmMontant));
-  const [salaireBase, setSalaireBase] = useState(String(parametres.salaireBase ?? 3500));
+  // un fixe par grade : { salaireVendeur: "3500", salaireManager: "3500", … }
+  const [fixes, setFixes] = useState(() =>
+    Object.fromEntries(
+      PAIE_PAR_GRADE.map(([, cle]) => [
+        cle,
+        String(parametres[cle] ?? parametres.salaireBase ?? 3500),
+      ]),
+    ),
+  );
   const [primeParOperation, setPrimeParOperation] = useState(String(parametres.primeParOperation ?? 250));
+  const [soldeInitial, setSoldeInitial] = useState(String(parametres.soldeInitial ?? 0));
 
   const [etat, setEtat] = useState("");
 
@@ -2018,8 +2040,11 @@ function Parametres({ parametres, setParametres, reductionTiers, setReductionTie
       reductionMaxVente: Math.min(100, Math.max(0, parseFloat(reductionMaxVente) || 0)),
       kmIntervalle: Math.max(1, parseFloat(kmIntervalle) || 1),
       kmMontant: parseFloat(kmMontant) || 0,
-      salaireBase: Math.max(0, parseFloat(salaireBase) || 0),
       primeParOperation: Math.max(0, parseFloat(primeParOperation) || 0),
+      soldeInitial: parseFloat(soldeInitial) || 0,
+      ...Object.fromEntries(
+        PAIE_PAR_GRADE.map(([, cle]) => [cle, Math.max(0, parseFloat(fixes[cle]) || 0)]),
+      ),
     };
     setEtat("envoi");
     try {
@@ -2090,16 +2115,24 @@ function Parametres({ parametres, setParametres, reductionTiers, setReductionTie
           ajoute 4 × 500 $ = 2 000 $ au prix de vente.
         </div>
 
-        <div style={s.formTitle2}>Paie des employés</div>
-        <label style={s.label}>Salaire de base ($ par employé et par période)</label>
-        <input
-          style={s.input}
-          type="number"
-          min="0"
-          value={salaireBase}
-          onChange={(e) => setSalaireBase(e.target.value)}
-          placeholder="ex : 3500"
-        />
+        <div style={s.formTitle2}>Paie — fixe par grade</div>
+        {PAIE_PAR_GRADE.map(([libelle, cle]) => (
+          <div key={cle}>
+            <label style={s.label}>{libelle} ($ par période)</label>
+            <input
+              style={s.input}
+              type="number"
+              min="0"
+              value={fixes[cle]}
+              onChange={(e) => setFixes({ ...fixes, [cle]: e.target.value })}
+              placeholder="ex : 3500"
+            />
+          </div>
+        ))}
+        <div style={s.previewHint}>
+          Chaque grade a son propre fixe. Un employé qui change de grade passe
+          automatiquement au fixe correspondant.
+        </div>
 
         <label style={s.label}>Prime par opération ($)</label>
         <input
@@ -2111,9 +2144,25 @@ function Parametres({ parametres, setParametres, reductionTiers, setReductionTie
           placeholder="ex : 250"
         />
         <div style={s.previewHint}>
-          Une vente et un rachat comptent pareil. Ex. avec 3 500 $ et 250 $ :
-          un employé qui a fait 4 opérations touche 3 500 + 4 × 250 = 4 500 $.
-          Le détail par employé est dans l'onglet "Salaires".
+          La prime est la même pour tout le monde, et une vente compte comme un
+          rachat. Ex. un vendeur à 3 500 $ qui a fait 4 opérations touche
+          3 500 + 4 × 250 = 4 500 $. Le détail par employé est dans l'onglet
+          "Salaires".
+        </div>
+
+        <div style={s.formTitle2}>Compte de l'entreprise</div>
+        <label style={s.label}>Solde de départ ($)</label>
+        <input
+          style={s.input}
+          type="number"
+          value={soldeInitial}
+          onChange={(e) => setSoldeInitial(e.target.value)}
+          placeholder="ex : 250000"
+        />
+        <div style={s.previewHint}>
+          Ce qu'il y avait déjà sur le compte avant qu'on suive tout ici. Le
+          solde affiché dans l'onglet "Compta" part de ce montant, puis ajoute
+          les ventes et retire les rachats, dépenses, dividendes et salaires.
         </div>
 
         <button type="submit" style={s.submitBtn} disabled={etat === "envoi"}>
@@ -2212,7 +2261,12 @@ export default function App() {
         kmIntervalle: p.kmIntervalle,
         kmMontant: p.kmMontant,
         salaireBase: p.salaireBase,
+        salaireVendeur: p.salaireVendeur,
+        salaireManager: p.salaireManager,
+        salaireCoPatron: p.salaireCoPatron,
+        salairePatron: p.salairePatron,
         primeParOperation: p.primeParOperation,
+        soldeInitial: p.soldeInitial,
       });
       setReductionTiers(p.tranchesReduction || []);
       setMargeTiers(p.tranchesMarge || []);

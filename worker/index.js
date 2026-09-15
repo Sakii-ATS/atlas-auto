@@ -105,13 +105,27 @@ async function genererCode(db) {
 
 // -------------------------------------------------------------- paramètres
 
+// Le fixe est réglé grade par grade dans Paramètres. La clé du paramètre
+// pour chaque grade :
+const CLE_SALAIRE = {
+  "Vendeur/Vendeuse": "salaireVendeur",
+  Manager: "salaireManager",
+  "Co-patron": "salaireCoPatron",
+  Patron: "salairePatron",
+};
+
 const PARAMETRES_DEFAUT = {
   reductionMaxVente: "15",
   kmIntervalle: "10000",
   kmMontant: "500",
   nomEntreprise: "VAPID AUTO",
-  salaireBase: "3500",
+  salaireBase: "3500", // filet de sécurité si un grade n a pas son propre fixe
+  salaireVendeur: "3500",
+  salaireManager: "3500",
+  salaireCoPatron: "3500",
+  salairePatron: "3500",
   primeParOperation: "250",
+  soldeInitial: "0", // ce qu il y avait sur le compte avant qu on suive tout ici
 };
 
 async function lireParametres(db) {
@@ -124,8 +138,20 @@ async function lireParametres(db) {
     kmMontant: Number(out.kmMontant),
     nomEntreprise: out.nomEntreprise,
     salaireBase: Number(out.salaireBase),
+    salaireVendeur: Number(out.salaireVendeur),
+    salaireManager: Number(out.salaireManager),
+    salaireCoPatron: Number(out.salaireCoPatron),
+    salairePatron: Number(out.salairePatron),
     primeParOperation: Number(out.primeParOperation),
+    soldeInitial: Number(out.soldeInitial),
   };
+}
+
+/** Le fixe d un grade, avec repli sur le salaire de base si rien n est réglé. */
+function fixeDuGrade(p, grade) {
+  const cle = CLE_SALAIRE[grade];
+  const valeur = cle ? p[cle] : undefined;
+  return Math.round(Number(Number.isFinite(valeur) ? valeur : p.salaireBase) || 0);
 }
 
 async function ecrireParametres(db, patch) {
@@ -566,13 +592,13 @@ on("GET", "/salaires", "Co-patron", async (c) => {
     ...b, ...b, ...b,
   );
 
-  // Paie = un fixe par employé + une prime par opération, vente ou rachat.
+  // Paie = un fixe selon le grade + une prime par opération, vente ou rachat.
   const p = await lireParametres(c.db);
-  const base = Math.round(Number(p.salaireBase) || 0);
   const prime = Math.round(Number(p.primeParOperation) || 0);
 
   const avecPaie = lignes.map((l) => {
     const operations = l.ventes + l.achats;
+    const base = fixeDuGrade(p, l.grade);
     return {
       ...l,
       operations,
@@ -584,7 +610,13 @@ on("GET", "/salaires", "Co-patron", async (c) => {
 
   return {
     debut, fin,
-    salaireBase: base,
+    salaireBase: p.salaireBase,
+    salairesParGrade: {
+      "Vendeur/Vendeuse": p.salaireVendeur,
+      Manager: p.salaireManager,
+      "Co-patron": p.salaireCoPatron,
+      Patron: p.salairePatron,
+    },
     primeParOperation: prime,
     masseSalariale: avecPaie.reduce((s, l) => s + l.salaire, 0),
     lignes: avecPaie,
@@ -614,10 +646,14 @@ on("GET", "/compta", "Co-patron", async (c) => {
        FROM depenses WHERE date BETWEEN ? AND ? ORDER BY date`,
     debut, fin,
   );
+  const dividendes = await c.db.tous(
+    `SELECT beneficiaire, montant, date, note, saisi_par
+       FROM dividendes WHERE date BETWEEN ? AND ? ORDER BY date`,
+    debut, fin,
+  );
 
   // Salaires : le même calcul que l onglet Salaires, sur la même période.
   const p = await lireParametres(c.db);
-  const base = Math.round(Number(p.salaireBase) || 0);
   const prime = Math.round(Number(p.primeParOperation) || 0);
   const employes = await c.db.tous(
     `SELECT e.id, e.nom, e.prenom, e.grade,
@@ -636,7 +672,11 @@ on("GET", "/compta", "Co-patron", async (c) => {
   );
   const salaires = employes.map((e) => {
     const operations = e.ventes + e.achats;
-    return { ...e, operations, salaire: base + operations * prime };
+    return {
+      ...e,
+      operations,
+      salaire: fixeDuGrade(p, e.grade) + operations * prime,
+    };
   });
 
   const ventes = mouvements.filter((m) => m.type === "vente");
@@ -647,6 +687,7 @@ on("GET", "/compta", "Co-patron", async (c) => {
   const totalAchats = somme(achats, "prix_final");
   const totalDepenses = somme(depenses, "montant");
   const totalSalaires = somme(salaires, "salaire");
+  const totalDividendes = somme(dividendes, "montant");
 
   // Le journal, dans l ordre chronologique. Entrée = ce qui rentre en caisse.
   const jour = (d) => String(d || "").slice(0, 10);
@@ -680,6 +721,15 @@ on("GET", "/compta", "Co-patron", async (c) => {
       entree: 0,
       sortie: d.montant,
     })),
+    ...dividendes.map((d) => ({
+      date: jour(d.date),
+      type: "Dividende",
+      libelle: d.beneficiaire,
+      detail: d.note,
+      par: d.saisi_par,
+      entree: 0,
+      sortie: d.montant,
+    })),
     ...salaires
       .filter((s) => s.salaire > 0)
       .map((s) => ({
@@ -700,12 +750,63 @@ on("GET", "/compta", "Co-patron", async (c) => {
     achats: { nombre: achats.length, total: totalAchats },
     depenses: { nombre: depenses.length, total: totalDepenses },
     salaires: { nombre: salaires.length, total: totalSalaires, lignes: salaires },
+    dividendes: { nombre: dividendes.length, total: totalDividendes },
     entrees: totalVentes,
-    sorties: totalAchats + totalDepenses + totalSalaires,
-    resultat: totalVentes - totalAchats - totalDepenses - totalSalaires,
+    sorties: totalAchats + totalDepenses + totalSalaires + totalDividendes,
+    resultat:
+      totalVentes - totalAchats - totalDepenses - totalSalaires - totalDividendes,
     lignes,
   };
 });
+/**
+ * Ce qu il reste sur le compte de l entreprise, depuis le début.
+ *
+ * Les salaires ne sont comptés que pour les semaines déjà enregistrées : c est
+ * au moment où on fige la semaine qu on les paye. Tant qu une semaine est en
+ * cours, son salaire n est pas encore sorti de la caisse.
+ */
+on("GET", "/tresorerie", "Co-patron", async (c) => {
+  const p = await lireParametres(c.db);
+  const depart = Math.round(Number(p.soldeInitial) || 0);
+
+  const m = await c.db.un(
+    `SELECT COALESCE(SUM(CASE WHEN type = 'vente' THEN prix_final END), 0) AS ventes,
+            COALESCE(SUM(CASE WHEN type = 'achat' THEN prix_final END), 0) AS achats
+       FROM mouvements`,
+  );
+  const d = await c.db.un("SELECT COALESCE(SUM(montant), 0) AS total FROM depenses");
+  const v = await c.db.un("SELECT COALESCE(SUM(montant), 0) AS total FROM dividendes");
+
+  const archives = await c.db.tous("SELECT donnees FROM comptas");
+  let salaires = 0;
+  for (const a of archives) {
+    try {
+      for (const l of JSON.parse(a.donnees || "{}").lignes || []) {
+        if (l.type === "Salaire") salaires += Number(l.sortie) || 0;
+      }
+    } catch {
+      // une archive illisible ne doit pas casser l affichage du solde
+    }
+  }
+
+  const entrees = Number(m.ventes) || 0;
+  const sorties =
+    (Number(m.achats) || 0) + (Number(d.total) || 0) + (Number(v.total) || 0) + salaires;
+
+  return {
+    depart,
+    ventes: Number(m.ventes) || 0,
+    achats: Number(m.achats) || 0,
+    depenses: Number(d.total) || 0,
+    dividendes: Number(v.total) || 0,
+    salaires,
+    semainesPayees: archives.length,
+    entrees,
+    sorties,
+    solde: depart + entrees - sorties,
+  };
+});
+
 /** Les semaines déjà enregistrées, la plus récente d abord. */
 on("GET", "/compta/archives", "Co-patron", async (c) =>
   c.db.tous(
@@ -790,6 +891,42 @@ on("PATCH", "/depenses/:id", "Co-patron", async (c) => {
 
 on("DELETE", "/depenses/:id", "Co-patron", async (c) => {
   await c.db.exec("DELETE FROM depenses WHERE id = ?", c.params.id);
+  return { fait: true };
+});
+
+// ===========================================================================
+// DIVIDENDES — ce que les patrons se versent sur les bénéfices
+// ===========================================================================
+
+on("GET", "/dividendes", "Co-patron", async (c) => {
+  const lignes = await c.db.tous(
+    "SELECT * FROM dividendes ORDER BY date DESC, id DESC",
+  );
+  return { lignes, total: lignes.reduce((s, d) => s + d.montant, 0) };
+});
+
+on("POST", "/dividendes", "Co-patron", async (c) => {
+  const { beneficiaire, montant, date, note } = c.corps;
+  if (!beneficiaire || !String(beneficiaire).trim()) {
+    refus(400, "Indique qui touche la dividende.");
+  }
+  const somme = Math.round(Number(montant) || 0);
+  if (somme <= 0) refus(400, "Le montant doit être supérieur à zéro.");
+
+  const { id } = await c.db.exec(
+    `INSERT INTO dividendes (beneficiaire, montant, date, note, saisi_par)
+     VALUES (?, ?, ?, ?, ?)`,
+    String(beneficiaire).trim(),
+    somme,
+    date || new Date().toISOString().slice(0, 10),
+    String(note || ""),
+    `${c.employe.prenom} ${c.employe.nom}`,
+  );
+  return c.db.un("SELECT * FROM dividendes WHERE id = ?", id);
+});
+
+on("DELETE", "/dividendes/:id", "Co-patron", async (c) => {
+  await c.db.exec("DELETE FROM dividendes WHERE id = ?", c.params.id);
   return { fait: true };
 });
 
@@ -1296,7 +1433,8 @@ on("PUT", "/parametres", "Co-patron", async (c) => {
   const patch = {};
   for (const cle of [
     "reductionMaxVente", "kmIntervalle", "kmMontant", "nomEntreprise",
-    "salaireBase", "primeParOperation",
+    "salaireBase", "primeParOperation", "soldeInitial",
+    "salaireVendeur", "salaireManager", "salaireCoPatron", "salairePatron",
   ]) {
     if (b[cle] !== undefined) patch[cle] = b[cle];
   }

@@ -146,6 +146,7 @@ export const api = {
     return get("/compta" + (s ? `?${s}` : ""));
   },
 
+  tresorerie: () => get("/tresorerie"),
   archivesCompta: () => get("/compta/archives"),
   archiveCompta: (id) => get(`/compta/archives/${id}`),
   archiverCompta: (a) => post("/compta/archives", a),
@@ -156,6 +157,11 @@ export const api = {
   ajouterDepense: (d) => post("/depenses", d),
   majDepense: (id, d) => patch(`/depenses/${id}`, d),
   supprimerDepense: (id) => del(`/depenses/${id}`),
+
+  // ------------------------------------------------------------ dividendes
+  dividendes: () => get("/dividendes"),
+  ajouterDividende: (d) => post("/dividendes", d),
+  supprimerDividende: (id) => del(`/dividendes/${id}`),
 
   // ------------------------------------------------------- catalogue/genres
   catalogue: () => get("/catalogue"),

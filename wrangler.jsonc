@@ -3,7 +3,7 @@
   //   - tout ce qui commence par /api passe par worker/index.js
   //   - tout le reste est un fichier de frontend/dist
   //   - une adresse inconnue renvoie index.html : c est React qui route
-  "name": "atlas-auto",
+  "name": "vapid-auto",
   "main": "worker/index.js",
   "compatibility_date": "2026-09-11",
 

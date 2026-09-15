@@ -102,8 +102,9 @@ export default function Salaires({ moi, isMobile }) {
   const totalVentes = lignes.reduce((s, l) => s + l.ventes, 0);
   const totalChiffre = lignes.reduce((s, l) => s + l.chiffre, 0);
   const masse = recap?.masseSalariale ?? lignes.reduce((s, l) => s + (l.salaire || 0), 0);
-  const base = recap?.salaireBase ?? 0;
   const prime = recap?.primeParOperation ?? 0;
+  // le fixe n est plus le même pour tout le monde : un montant par grade
+  const parGrade = Object.entries(recap?.salairesParGrade || {});
 
   return (
     <section>
@@ -161,11 +162,21 @@ export default function Salaires({ moi, isMobile }) {
       <div style={{ ...u.carte, marginBottom: 18 }}>
         <h2 style={u.titreCarte}>Par employé</h2>
         <p style={u.aide}>
-          Classé du plus grand nombre de ventes au plus petit. Paie ={" "}
-          <strong style={{ color: C.texte2 }}>{argent(base)}</strong> de fixe
+          Classé du plus grand nombre de ventes au plus petit. Paie = le fixe du
+          grade{" "}
+          {parGrade.length > 0 && (
+            <>
+              ({parGrade.map(([g, montant], i) => (
+                <span key={g}>
+                  {i > 0 ? ", " : ""}
+                  {g} <strong style={{ color: C.texte2 }}>{argent(montant)}</strong>
+                </span>
+              ))})
+            </>
+          )}
           {" + "}
           <strong style={{ color: C.texte2 }}>{argent(prime)}</strong> par opération
-          (vente ou rachat). Ces deux montants se règlent dans l'onglet Paramètres.
+          (vente ou rachat). Tout ça se règle dans l'onglet Paramètres.
         </p>
         {lignes.length === 0 ? (
           <div style={u.vide}>Aucun employé actif.</div>

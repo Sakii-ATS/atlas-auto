@@ -45,9 +45,13 @@ function libellePeriode({ debut, fin }) {
 
 // -------------------------------------------------------------------- calculs
 
-const TON_TYPE = { Vente: "vert", Rachat: "bleu", Dépense: "ambre", Salaire: "gris" };
+const TON_TYPE = {
+  Vente: "vert", Rachat: "bleu", Dépense: "gris", Salaire: "gris", Dividende: "ambre",
+};
 
-/** Recalcule les quatre postes à partir du journal (utile pour les archives). */
+const TYPES = ["Tout", "Vente", "Rachat", "Dépense", "Salaire", "Dividende"];
+
+/** Recalcule les postes à partir du journal (utile pour les archives). */
 function postes(lignes = []) {
   const poste = (type, champ) => {
     const l = lignes.filter((x) => x.type === type);
@@ -58,10 +62,11 @@ function postes(lignes = []) {
     achats: poste("Rachat", "sortie"),
     depenses: poste("Dépense", "sortie"),
     salaires: poste("Salaire", "sortie"),
+    dividendes: poste("Dividende", "sortie"),
   };
 }
 
-/** Les six feuilles du classeur : un vrai tableau par catégorie. */
+/** Les feuilles du classeur : un vrai tableau par catégorie. */
 function feuillesDu(etat) {
   const lignes = etat.lignes || [];
   const de = (type) => lignes.filter((l) => l.type === type);
@@ -71,6 +76,7 @@ function feuillesDu(etat) {
   const rachats = de("Rachat");
   const depenses = de("Dépense");
   const salaires = de("Salaire");
+  const dividendes = de("Dividende");
 
   const colDate = { titre: "Date", cle: "date", type: "date" };
 
@@ -87,6 +93,7 @@ function feuillesDu(etat) {
         { poste: "Rachats (décaissé)", nombre: rachats.length, montant: total(rachats, "sortie") },
         { poste: "Dépenses (décaissé)", nombre: depenses.length, montant: total(depenses, "sortie") },
         { poste: "Salaires (décaissé)", nombre: salaires.length, montant: total(salaires, "sortie") },
+        { poste: "Dividendes (décaissé)", nombre: dividendes.length, montant: total(dividendes, "sortie") },
       ],
       pied: [
         { poste: "Total encaissé", montant: etat.entrees || 0 },
@@ -142,6 +149,18 @@ function feuillesDu(etat) {
       pied: [{ libelle: "TOTAL", sortie: total(salaires, "sortie") }],
     },
     {
+      nom: "Dividendes",
+      colonnes: [
+        colDate,
+        { titre: "Bénéficiaire", cle: "libelle" },
+        { titre: "Motif", cle: "detail" },
+        { titre: "Versé par", cle: "par" },
+        { titre: "Montant", cle: "sortie", type: "argent" },
+      ],
+      lignes: dividendes,
+      pied: [{ libelle: "TOTAL", sortie: total(dividendes, "sortie") }],
+    },
+    {
       nom: "Journal",
       colonnes: [
         colDate,
@@ -176,12 +195,23 @@ export default function Compta({ isMobile }) {
   const [info, setInfo] = useState("");
   const [filtre, setFiltre] = useState("Tout");
   const [occupe, setOccupe] = useState(false);
+  const [dividendes, setDividendes] = useState([]);
+  const [tresorerie, setTresorerie] = useState(null);
+  const [detailSolde, setDetailSolde] = useState(false);
+  const [form, setForm] = useState({ beneficiaire: "", montant: "", date: "", note: "" });
 
   async function recharger() {
     try {
-      const [c, a] = await Promise.all([api.compta(periode.debut, periode.fin), api.archivesCompta()]);
+      const [c, a, d, t] = await Promise.all([
+        api.compta(periode.debut, periode.fin),
+        api.archivesCompta(),
+        api.dividendes(),
+        api.tresorerie(),
+      ]);
       setEtat(c);
       setArchives(a);
+      setDividendes(d.lignes || []);
+      setTresorerie(t);
       setErreur("");
     } catch (e) {
       setErreur(e.message);
@@ -219,6 +249,37 @@ export default function Compta({ isMobile }) {
       telechargerClasseur(`compta-${vuePeriode.debut}-au-${vuePeriode.fin}.xlsx`, feuillesDu(vue));
     } catch (e) {
       setErreur(e.message);
+    }
+  }
+
+  /** Les dividendes versées sur la semaine affichée. */
+  const dividendesSemaine = dividendes.filter(
+    (d) => d.date >= periode.debut && d.date <= periode.fin,
+  );
+
+  async function verser(e) {
+    e.preventDefault();
+    try {
+      await api.ajouterDividende({
+        beneficiaire: form.beneficiaire,
+        montant: form.montant,
+        date: form.date || periode.fin,
+        note: form.note,
+      });
+      setForm({ beneficiaire: "", montant: "", date: "", note: "" });
+      setErreur("");
+      recharger();
+    } catch (err) {
+      setErreur(err.message);
+    }
+  }
+
+  async function annulerDividende(d) {
+    try {
+      await api.supprimerDividende(d.id);
+      recharger();
+    } catch (err) {
+      setErreur(err.message);
     }
   }
 
@@ -276,6 +337,106 @@ export default function Compta({ isMobile }) {
       />
       <Alerte>{erreur}</Alerte>
       <Alerte ton="vert">{info}</Alerte>
+
+      {/* ------------------------------------------------- le compte entreprise */}
+      <div
+        style={{
+          ...u.carte,
+          marginBottom: 18,
+          borderColor: (tresorerie?.solde ?? 0) >= 0 ? `${C.ambre}66` : "rgba(210,104,95,.5)",
+          background: `${C.ambre}0A`,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 10.5, color: C.texte3, letterSpacing: 0.5 }}>
+              COMPTE DE L'ENTREPRISE
+            </div>
+            <div
+              style={{
+                fontFamily: C.titre,
+                fontSize: isMobile ? 32 : 42,
+                fontWeight: 800,
+                color: (tresorerie?.solde ?? 0) >= 0 ? C.ambre : C.rouge,
+                lineHeight: 1.1,
+              }}
+            >
+              {argent(tresorerie?.solde)}
+            </div>
+            <div style={{ fontSize: 11.5, color: C.texte3, marginTop: 4 }}>
+              Depuis le début, toutes semaines confondues.
+            </div>
+          </div>
+          <Bouton ton="fantome" petit onClick={() => setDetailSolde(!detailSolde)}>
+            {detailSolde ? "Masquer le détail" : "D'où vient ce chiffre ?"}
+          </Bouton>
+        </div>
+
+        {detailSolde && tresorerie && (
+          <div style={{ marginTop: 16, borderTop: `1px solid ${C.bord}`, paddingTop: 14 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <tbody>
+                {[
+                  ["Solde de départ", tresorerie.depart, null],
+                  ["Ventes encaissées", tresorerie.ventes, "+"],
+                  ["Rachats payés", tresorerie.achats, "−"],
+                  ["Dépenses", tresorerie.depenses, "−"],
+                  ["Dividendes versées", tresorerie.dividendes, "−"],
+                  [
+                    `Salaires (${tresorerie.semainesPayees} semaine${tresorerie.semainesPayees > 1 ? "s" : ""} enregistrée${tresorerie.semainesPayees > 1 ? "s" : ""})`,
+                    tresorerie.salaires,
+                    "−",
+                  ],
+                ].map(([label, valeur, signe]) => (
+                  <tr key={label}>
+                    <td style={{ padding: "6px 0", color: C.texte2 }}>{label}</td>
+                    <td
+                      style={{
+                        padding: "6px 0",
+                        textAlign: "right",
+                        fontVariantNumeric: "tabular-nums",
+                        color: signe === "−" ? C.rouge : signe === "+" ? C.vert : C.texte,
+                      }}
+                    >
+                      {signe || ""}{signe ? " " : ""}{argent(valeur)}
+                    </td>
+                  </tr>
+                ))}
+                <tr>
+                  <td style={{ padding: "10px 0 0", fontWeight: 700, borderTop: `1px solid ${C.bord}` }}>
+                    Sur le compte
+                  </td>
+                  <td
+                    style={{
+                      padding: "10px 0 0",
+                      textAlign: "right",
+                      fontWeight: 800,
+                      borderTop: `1px solid ${C.bord}`,
+                      fontVariantNumeric: "tabular-nums",
+                      color: C.ambre,
+                    }}
+                  >
+                    {argent(tresorerie.solde)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p style={{ ...u.aide, margin: "12px 0 0" }}>
+              Les salaires ne sortent de la caisse qu'au moment où tu enregistres la
+              semaine — c'est là que tu les payes. Le solde de départ se règle dans
+              l'onglet Paramètres.
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* ----------------------------------------------- la semaine + actions */}
       <div style={{ ...u.carte, marginBottom: 18 }}>
@@ -370,7 +531,7 @@ export default function Compta({ isMobile }) {
 
         <p style={{ ...u.aide, margin: "10px 0 0" }}>
           L'export est un classeur Excel avec une feuille par catégorie : Résumé, Ventes,
-          Rachats, Dépenses, Salaires et le Journal complet.
+          Rachats, Dépenses, Salaires, Dividendes et le Journal complet.
         </p>
       </div>
 
@@ -404,7 +565,7 @@ export default function Compta({ isMobile }) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)",
+          gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5, 1fr)",
           gap: 12,
           marginBottom: 12,
         }}
@@ -414,6 +575,7 @@ export default function Compta({ isMobile }) {
           ["Rachats", vue?.achats, C.texte2],
           ["Dépenses", vue?.depenses, C.texte2],
           ["Salaires", vue?.salaires, C.texte2],
+          ["Dividendes", vue?.dividendes, C.ambre],
         ].map(([label, poste, couleur]) => (
           <div key={label} style={{ ...u.carte, padding: 16 }}>
             <div style={{ fontSize: 10.5, color: C.texte3, letterSpacing: 0.5, marginBottom: 6 }}>
@@ -462,11 +624,95 @@ export default function Compta({ isMobile }) {
         </div>
       </div>
 
+      {/* ------------------------------------------------------------ dividendes */}
+      {!ouverte && (
+        <div style={{ ...u.carte, marginBottom: 18 }}>
+          <h2 style={u.titreCarte}>Dividendes de la semaine</h2>
+          <p style={u.aide}>
+            Ce que les patrons se versent sur les bénéfices. C'est décaissé comme le
+            reste : ça descend le résultat de la semaine et ça part dans l'export.
+          </p>
+
+          <form onSubmit={verser}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: isMobile ? "1fr" : "1.3fr 0.9fr 1fr 1.4fr auto",
+                gap: 12,
+                alignItems: "end",
+              }}
+            >
+              <Champ
+                label="Bénéficiaire"
+                value={form.beneficiaire}
+                onChange={(e) => setForm({ ...form, beneficiaire: e.target.value })}
+                placeholder="Clovis Petit"
+              />
+              <Champ
+                label="Montant"
+                type="number"
+                value={form.montant}
+                onChange={(e) => setForm({ ...form, montant: e.target.value })}
+                placeholder="50000"
+              />
+              <Champ
+                label="Date"
+                type="date"
+                value={form.date || periode.fin}
+                onChange={(e) => setForm({ ...form, date: e.target.value })}
+              />
+              <Champ
+                label="Motif"
+                value={form.note}
+                onChange={(e) => setForm({ ...form, note: e.target.value })}
+                placeholder="Facultatif"
+              />
+              <Bouton type="submit">Verser</Bouton>
+            </div>
+          </form>
+
+          {dividendesSemaine.length === 0 ? (
+            <div style={{ ...u.vide, marginTop: 14 }}>
+              Aucune dividende versée cette semaine.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
+              {dividendesSemaine.map((d) => (
+                <div key={d.id} style={u.ligne}>
+                  <div style={{ minWidth: 150, flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14.5 }}>{d.beneficiaire}</div>
+                    <div style={{ fontSize: 11.5, color: C.texte3, marginTop: 2 }}>
+                      {d.date}
+                      {d.note ? ` · ${d.note}` : ""}
+                      {d.saisi_par ? ` · versé par ${d.saisi_par}` : ""}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: C.titre,
+                      fontWeight: 800,
+                      fontSize: 17,
+                      color: C.ambre,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {argent(d.montant)}
+                  </div>
+                  <div style={{ marginLeft: "auto" }}>
+                    <BoutonSupprimer onConfirm={() => annulerDividende(d)} libelle="Annuler" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* -------------------------------------------------------------- le journal */}
       <div style={{ ...u.carte, marginBottom: 18 }}>
         <h2 style={u.titreCarte}>Journal</h2>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-          {["Tout", "Vente", "Rachat", "Dépense", "Salaire"].map((t) => (
+          {TYPES.map((t) => (
             <button
               key={t}
               onClick={() => setFiltre(t)}
