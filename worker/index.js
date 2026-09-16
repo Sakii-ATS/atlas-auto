@@ -1201,6 +1201,15 @@ on("PATCH", "/vehicules/:id", "Manager", async (c) => {
         WHERE id = ?`,
       prix.reduction, prix.marge, prix.prixAchat, prix.prixVente, v.id,
     );
+
+    // Le rachat déjà passé en compta suit la correction : c est le même
+    // paiement, pas une nouvelle opération. On ne touche pas à une vente —
+    // ce que le client a payé est ce qu il a payé.
+    await c.db.exec(
+      `UPDATE mouvements SET prix_initial = ?, prix_final = ?
+        WHERE vehicule_id = ? AND type = 'achat'`,
+      prix.prixAchat, prix.prixAchat, v.id,
+    );
   }
 
   return c.db.un("SELECT * FROM vehicules WHERE id = ?", v.id);
