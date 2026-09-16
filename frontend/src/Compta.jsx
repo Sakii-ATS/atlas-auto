@@ -182,17 +182,16 @@ function ecrireReglage(nom, valeur) {
 /**
  * Fabrique les feuilles du classeur.
  *
- * `inclus`   : quelles feuilles partent dans le fichier.
- * `colonnes` : quelles colonnes de chaque feuille, sous la forme
- *              { Vente: { par: false } } pour sortir « Vendu par » des ventes.
+ * `inclus` dit quels postes partent dans le fichier. Éteindre un poste le sort
+ * des données : sa ligne du résumé, ses lignes du journal et les totaux. Sa
+ * feuille reste quand même dans le fichier, avec ses titres de colonnes et un
+ * TOTAL à zéro — le tableau garde sa forme, il est juste vide.
  *
- * Une feuille décochée disparaît partout — son onglet, sa ligne du résumé, et
- * elle ne compte plus dans les totaux. Dans ce cas on retire aussi le solde du
- * compte : il ne voudrait plus rien dire si on a mis des sorties de côté.
+ * Le solde du compte, lui, est retiré du résumé dès qu un poste est éteint :
+ * il ne voudrait plus rien dire si on a mis des sorties de côté.
  */
-function feuillesDu(etat, inclus = {}, colonnes = {}, archives = []) {
+function feuillesDu(etat, inclus = {}, archives = []) {
   const veut = (cle) => inclus[cle] !== false;
-  const veutCol = (feuille, col) => colonnes[feuille]?.[col] !== false;
 
   const toutes = etat.lignes || [];
   const lignes = toutes.filter((l) => veut(l.type));
@@ -203,15 +202,13 @@ function feuillesDu(etat, inclus = {}, colonnes = {}, archives = []) {
   const sorties = total(lignes, "sortie");
 
   // Seuls les postes qui portent de l argent changent les totaux. Retirer le
-  // Journal ne fausse rien : c est juste une autre vue des mêmes lignes.
+  // Journal ou l Historique ne fausse rien : ce sont d autres vues.
   const exclus = POSTES.filter((f) => f.montant && !veut(f.cle)).map((f) => f.nom);
   const complet = exclus.length === 0;
 
   return FEUILLES.map((f) => {
-    if (f.cle !== "Résumé" && !veut(f.cle)) return null;
-
-    const cols = f.colonnes.filter((c) => veutCol(f.cle, c.cle));
-    if (cols.length === 0) return null; // tout décoché : pas de feuille vide
+    const actif = f.cle === "Résumé" || veut(f.cle);
+    const cols = f.colonnes;
 
     // ------------------------------------------------------------- le résumé
     if (f.cle === "Résumé") {
@@ -249,7 +246,7 @@ function feuillesDu(etat, inclus = {}, colonnes = {}, archives = []) {
     // ------------------------------------- l historique des semaines figées
     if (f.historique) {
       // de la plus ancienne à la plus récente : c est le sens d une évolution
-      const semaines = [...archives].sort((a, b) => (a.debut < b.debut ? -1 : 1));
+      const semaines = actif ? [...archives].sort((a, b) => (a.debut < b.debut ? -1 : 1)) : [];
       const somme = (champ) => semaines.reduce((s, x) => s + (Number(x[champ]) || 0), 0);
       return {
         nom: f.nom,
@@ -274,25 +271,28 @@ function feuillesDu(etat, inclus = {}, colonnes = {}, archives = []) {
     }
 
     // ------------------------------------------------- le journal et le reste
-    const contenu = f.journal
-      ? // les zéros restent vides dans le journal, c'est plus lisible
-        lignes.map((l) => ({ ...l, entree: l.entree || "", sortie: l.sortie || "" }))
-      : de(f.cle);
+    let contenu = [];
+    if (actif) {
+      contenu = f.journal
+        ? // les zéros restent vides dans le journal, c'est plus lisible
+          lignes.map((l) => ({ ...l, entree: l.entree || "", sortie: l.sortie || "" }))
+        : de(f.cle);
+    }
 
-    // La ligne TOTAL : le mot dans la première colonne de texte visible, la
-    // somme dans la colonne d argent.
+    // La ligne TOTAL : le mot dans la première colonne de texte, la somme dans
+    // la colonne d argent. Un poste éteint garde sa ligne, à zéro.
     const pied = {};
     const texte = cols.find((c) => !c.type);
     if (texte) pied[texte.cle] = "TOTAL";
     if (f.journal) {
-      if (veutCol(f.cle, "entree")) pied.entree = entrees;
-      if (veutCol(f.cle, "sortie")) pied.sortie = sorties;
-    } else if (veutCol(f.cle, f.montant)) {
-      pied[f.montant] = total(de(f.cle), f.montant);
+      pied.entree = entrees;
+      pied.sortie = sorties;
+    } else {
+      pied[f.montant] = total(contenu, f.montant);
     }
 
     return { nom: f.nom, colonnes: cols, lignes: contenu, pied: [pied] };
-  }).filter(Boolean);
+  });
 }
 
 
@@ -336,10 +336,8 @@ export default function Compta({ isMobile }) {
   // fichier. On le garde dans le navigateur : sinon changer d onglet remet
   // tout à zéro sans prévenir, et l export repart complet.
   const [inclus, setInclus] = useState(() => lireReglage("inclus"));
-  const [colonnes, setColonnes] = useState(() => lireReglage("colonnes"));
 
   useEffect(() => { ecrireReglage("inclus", inclus); }, [inclus]);
-  useEffect(() => { ecrireReglage("colonnes", colonnes); }, [colonnes]);
   const [form, setForm] = useState({ beneficiaire: "", montant: "", date: "", note: "" });
   const [manuelles, setManuelles] = useState([]);
   const [formVente, setFormVente] = useState({
@@ -398,7 +396,7 @@ export default function Compta({ isMobile }) {
     try {
       telechargerClasseur(
         `compta-${vuePeriode.debut}-au-${vuePeriode.fin}.xlsx`,
-        feuillesDu(vue, inclus, colonnes, archives),
+        feuillesDu(vue, inclus, archives),
       );
     } catch (e) {
       setErreur(e.message);
@@ -759,49 +757,49 @@ export default function Compta({ isMobile }) {
                     {on ? "✓ " : ""}{f.nom}
                   </button>
 
-                  {on &&
-                    f.colonnes.map((c) => {
-                      const vu = colonnes[f.cle]?.[c.cle] !== false;
-                      return (
-                        <button
-                          key={c.cle}
-                          onClick={() =>
-                            setColonnes({
-                              ...colonnes,
-                              [f.cle]: { ...(colonnes[f.cle] || {}), [c.cle]: !vu },
-                            })
-                          }
-                          title={
-                            vu
-                              ? `Colonne « ${c.titre} » gardée`
-                              : `Colonne « ${c.titre} » retirée`
-                          }
-                          style={{
-                            background: "transparent",
-                            border: `1px solid ${vu ? C.bord2 : "transparent"}`,
-                            color: vu ? C.texte2 : C.texte3,
-                            fontWeight: 600,
-                            fontSize: 11.5,
-                            padding: "4px 9px",
-                            borderRadius: 14,
-                            cursor: "pointer",
-                            textDecoration: vu ? "none" : "line-through",
-                            opacity: vu ? 1 : 0.55,
-                          }}
-                        >
-                          {c.titre}
-                        </button>
-                      );
-                    })}
+                  {/* Les petites montrent les colonnes du tableau. Cliquer sur
+                      l une d elles allume ou éteint la ligne entière, comme la
+                      grosse — sinon on croit avoir enlevé le poste alors qu il
+                      est encore compté ailleurs. */}
+                  {f.colonnes.map((c) => (
+                    <button
+                      key={c.cle}
+                      onClick={() => !toujours && setInclus({ ...inclus, [f.cle]: !on })}
+                      disabled={toujours}
+                      title={
+                        toujours
+                          ? "Le résumé est toujours dans le fichier"
+                          : on
+                            ? `Colonne « ${c.titre} » — clique pour vider la feuille ${f.nom}`
+                            : `${f.nom} est vidé — clique pour le remettre`
+                      }
+                      style={{
+                        background: "transparent",
+                        border: `1px solid ${on ? C.bord2 : "transparent"}`,
+                        color: on ? C.texte2 : C.texte3,
+                        fontWeight: 600,
+                        fontSize: 11.5,
+                        padding: "4px 9px",
+                        borderRadius: 14,
+                        cursor: toujours ? "default" : "pointer",
+                        textDecoration: on ? "none" : "line-through",
+                        opacity: on ? 1 : 0.45,
+                      }}
+                    >
+                      {c.titre}
+                    </button>
+                  ))}
                 </div>
               );
             })}
           </div>
           <p style={{ ...u.aide, margin: "12px 0 0" }}>
-            La grosse pastille, c'est la feuille ; les petites à côté, ses colonnes.
-            Tout ce que tu éteins sort du fichier. Une feuille décochée sort aussi des
-            totaux — pratique pour donner une compta sans les salaires. Dans ce cas le
-            solde du compte est retiré du résumé, il ne voudrait plus rien dire.
+            Une ligne = une feuille du fichier, avec les colonnes de son tableau à
+            côté. Clique n'importe où sur la ligne pour l'éteindre : la feuille reste
+            dans le fichier avec ses titres de colonnes, mais elle est vide, et le
+            poste sort du Résumé, du Journal et des totaux. Pratique pour donner une
+            compta sans les salaires. Dans ce cas le solde du compte est retiré du
+            résumé, il ne voudrait plus rien dire.
           </p>
         </div>
       </div>
