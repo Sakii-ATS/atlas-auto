@@ -857,13 +857,14 @@ on("GET", "/tresorerie", "Co-patron", async (c) => {
 });
 
 /**
- * Une vente saisie à la main, pour rattraper ce qui s est fait hors du site.
- * C est un mouvement comme un autre, sans véhicule rattaché — c est justement
- * ce qui permet de le reconnaître et de le supprimer plus tard.
+ * Une vente ou un rachat saisi à la main, pour rattraper ce qui s est fait
+ * hors du site. C est un mouvement comme un autre, sans véhicule rattaché —
+ * c est justement ce qui permet de le reconnaître et de le retirer plus tard.
  */
-on("POST", "/compta/ventes", "Co-patron", async (c) => {
-  const { modele, montant, date, clientNom, clientPrenom, clientClasse, note } = c.corps;
-  if (!modele || !String(modele).trim()) refus(400, "Indique ce qui a été vendu.");
+on("POST", "/compta/manuelles", "Co-patron", async (c) => {
+  const { type, modele, montant, date, clientNom, clientPrenom, clientClasse, note } = c.corps;
+  if (!["vente", "achat"].includes(type)) refus(400, "Type attendu : vente ou achat.");
+  if (!modele || !String(modele).trim()) refus(400, "Indique le véhicule.");
   const somme = Math.round(Number(montant) || 0);
   if (somme <= 0) refus(400, "Le montant doit être supérieur à zéro.");
 
@@ -871,7 +872,8 @@ on("POST", "/compta/ventes", "Co-patron", async (c) => {
     `INSERT INTO mouvements
        (type, vehicule_id, modele, genre, image, prix_initial, prix_final,
         client_nom, client_prenom, client_classe, vendeur_nom, vendeur_prenom, employe_id, date)
-     VALUES ('vente', NULL, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, NULL, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    type,
     String(modele).trim(),
     String(note || ""),
     somme, somme,
@@ -884,34 +886,36 @@ on("POST", "/compta/ventes", "Co-patron", async (c) => {
   return c.db.un("SELECT * FROM mouvements WHERE id = ?", id);
 });
 
-/** Ne supprime que les ventes saisies à la main — jamais une vraie vente. */
-on("DELETE", "/compta/ventes/:id", "Co-patron", async (c) => {
-  const m = await c.db.un(
-    "SELECT id, vehicule_id FROM mouvements WHERE id = ? AND type = 'vente'",
-    c.params.id,
-  );
-  if (!m) refus(404, "Vente introuvable.");
+/** Ne supprime que ce qui a été saisi à la main — jamais une vraie opération. */
+on("DELETE", "/compta/manuelles/:id", "Co-patron", async (c) => {
+  const m = await c.db.un("SELECT id, vehicule_id FROM mouvements WHERE id = ?", c.params.id);
+  if (!m) refus(404, "Ligne introuvable.");
   if (m.vehicule_id !== null) {
-    refus(400, "Cette vente vient d un véhicule du stock : elle se supprime depuis « Ventes réalisées ».");
+    refus(
+      400,
+      "Cette ligne vient d un véhicule du stock : elle se gère depuis « Ventes réalisées ».",
+    );
   }
   await c.db.exec("DELETE FROM mouvements WHERE id = ?", m.id);
   return { fait: true };
 });
 
-/** Les ventes saisies à la main, pour pouvoir les relire et les retirer. */
-on("GET", "/compta/ventes", "Co-patron", async (c) =>
+/** Ce qui a été saisi à la main, pour pouvoir le relire et le retirer. */
+on("GET", "/compta/manuelles", "Co-patron", async (c) =>
   c.db.tous(
-    `SELECT id, modele, genre, prix_final, date, client_nom, client_prenom,
+    `SELECT id, type, modele, genre, prix_final, date, client_nom, client_prenom,
             vendeur_nom, vendeur_prenom
        FROM mouvements
-      WHERE type = 'vente' AND vehicule_id IS NULL
+      WHERE vehicule_id IS NULL
       ORDER BY date DESC, id DESC`,
   ));
 
 /** Les semaines déjà enregistrées, la plus récente d abord. */
 on("GET", "/compta/archives", "Co-patron", async (c) =>
   c.db.tous(
-    `SELECT id, debut, fin, entrees, sorties, resultat, note, cree_par, cree_le
+    `SELECT id, debut, fin, entrees, sorties, resultat, note, cree_par, cree_le,
+            json_extract(donnees, '$.soldeAvant') AS solde_avant,
+            json_extract(donnees, '$.soldeApres') AS solde_apres
        FROM comptas ORDER BY debut DESC, id DESC`,
   ));
 

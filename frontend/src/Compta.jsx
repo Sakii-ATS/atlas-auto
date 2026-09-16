@@ -126,6 +126,20 @@ const FEUILLES = [
     ],
   },
   {
+    cle: "Historique",
+    nom: "Historique",
+    historique: true,
+    colonnes: [
+      { titre: "Du", cle: "debut", type: "date" },
+      { titre: "Au", cle: "fin", type: "date" },
+      { titre: "Encaissé", cle: "entrees", type: "argent" },
+      { titre: "Décaissé", cle: "sorties", type: "argent" },
+      { titre: "Résultat", cle: "resultat", type: "argent" },
+      { titre: "Sur le compte après", cle: "solde", type: "argent" },
+      { titre: "Enregistrée par", cle: "par" },
+    ],
+  },
+  {
     cle: "Journal",
     nom: "Journal",
     journal: true,
@@ -176,7 +190,7 @@ function ecrireReglage(nom, valeur) {
  * elle ne compte plus dans les totaux. Dans ce cas on retire aussi le solde du
  * compte : il ne voudrait plus rien dire si on a mis des sorties de côté.
  */
-function feuillesDu(etat, inclus = {}, colonnes = {}) {
+function feuillesDu(etat, inclus = {}, colonnes = {}, archives = []) {
   const veut = (cle) => inclus[cle] !== false;
   const veutCol = (feuille, col) => colonnes[feuille]?.[col] !== false;
 
@@ -229,6 +243,33 @@ function feuillesDu(etat, inclus = {}, colonnes = {}) {
               ]
             : [{ poste: `Export partiel — hors ${exclus.join(", ").toLowerCase()}` }]),
         ],
+      };
+    }
+
+    // ------------------------------------- l historique des semaines figées
+    if (f.historique) {
+      // de la plus ancienne à la plus récente : c est le sens d une évolution
+      const semaines = [...archives].sort((a, b) => (a.debut < b.debut ? -1 : 1));
+      const somme = (champ) => semaines.reduce((s, x) => s + (Number(x[champ]) || 0), 0);
+      return {
+        nom: f.nom,
+        colonnes: cols,
+        lignes: semaines.map((a) => ({
+          debut: a.debut,
+          fin: a.fin,
+          entrees: a.entrees,
+          sorties: a.sorties,
+          resultat: a.resultat,
+          // les vieilles archives n ont pas de solde enregistré
+          solde: a.solde_apres ?? "",
+          par: a.cree_par || "",
+        })),
+        pied: [{
+          fin: "TOTAL",
+          entrees: somme("entrees"),
+          sorties: somme("sorties"),
+          resultat: somme("resultat"),
+        }],
       };
     }
 
@@ -300,9 +341,9 @@ export default function Compta({ isMobile }) {
   useEffect(() => { ecrireReglage("inclus", inclus); }, [inclus]);
   useEffect(() => { ecrireReglage("colonnes", colonnes); }, [colonnes]);
   const [form, setForm] = useState({ beneficiaire: "", montant: "", date: "", note: "" });
-  const [ventesM, setVentesM] = useState([]);
+  const [manuelles, setManuelles] = useState([]);
   const [formVente, setFormVente] = useState({
-    modele: "", montant: "", date: "", clientNom: "", clientPrenom: "",
+    type: "vente", modele: "", montant: "", date: "", clientNom: "", clientPrenom: "",
   });
 
   async function recharger() {
@@ -312,13 +353,13 @@ export default function Compta({ isMobile }) {
         api.archivesCompta(),
         api.dividendes(),
         api.tresorerie(),
-        api.ventesManuelles(),
+        api.lignesManuelles(),
       ]);
       setEtat(c);
       setArchives(a);
       setDividendes(d.lignes || []);
       setTresorerie(t);
-      setVentesM(vm);
+      setManuelles(vm);
       setErreur("");
     } catch (e) {
       setErreur(e.message);
@@ -357,7 +398,7 @@ export default function Compta({ isMobile }) {
     try {
       telechargerClasseur(
         `compta-${vuePeriode.debut}-au-${vuePeriode.fin}.xlsx`,
-        feuillesDu(vue, inclus, colonnes),
+        feuillesDu(vue, inclus, colonnes, archives),
       );
     } catch (e) {
       setErreur(e.message);
@@ -386,8 +427,8 @@ export default function Compta({ isMobile }) {
     }
   }
 
-  /** Les ventes saisies à la main qui tombent dans la semaine affichée. */
-  const ventesSemaine = ventesM.filter((v) => {
+  /** Ce qui a été saisi à la main et tombe dans la semaine affichée. */
+  const manuellesSemaine = manuelles.filter((v) => {
     const j = String(v.date || "").slice(0, 10);
     return j >= periode.debut && j <= periode.fin;
   });
@@ -395,14 +436,15 @@ export default function Compta({ isMobile }) {
   async function ajouterVente(e) {
     e.preventDefault();
     try {
-      await api.ajouterVenteManuelle({
+      await api.ajouterLigneManuelle({
+        type: formVente.type,
         modele: formVente.modele,
         montant: formVente.montant,
         date: formVente.date || periode.fin,
         clientNom: formVente.clientNom,
         clientPrenom: formVente.clientPrenom,
       });
-      setFormVente({ modele: "", montant: "", date: "", clientNom: "", clientPrenom: "" });
+      setFormVente({ ...formVente, modele: "", montant: "", clientNom: "", clientPrenom: "" });
       setErreur("");
       recharger();
     } catch (err) {
@@ -412,7 +454,7 @@ export default function Compta({ isMobile }) {
 
   async function retirerVente(v) {
     try {
-      await api.supprimerVenteManuelle(v.id);
+      await api.supprimerLigneManuelle(v.id);
       recharger();
     } catch (err) {
       setErreur(err.message);
@@ -863,12 +905,39 @@ export default function Compta({ isMobile }) {
       {/* --------------------------------------------- ventes saisies à la main */}
       {!ouverte && (
         <div style={{ ...u.carte, marginBottom: 18 }}>
-          <h2 style={u.titreCarte}>Ajouter une vente à la main</h2>
+          <h2 style={u.titreCarte}>Ajouter une opération à la main</h2>
           <p style={u.aide}>
-            Pour ce qui s'est vendu en dehors du site. La ligne entre dans la compta
-            comme une vraie vente : elle encaisse, elle part dans l'export et dans
-            « Ventes réalisées ».
+            Pour ce qui s'est fait en dehors du site — une voiture vendue ou rachetée
+            sans passer par la fiche. La ligne entre dans la compta comme une vraie
+            opération : elle bouge le résultat et elle part dans l'export.
           </p>
+
+          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+            {[["vente", "Vente", C.vert], ["achat", "Rachat", C.bleu]].map(
+              ([cle, label, couleur]) => {
+                const actif = formVente.type === cle;
+                return (
+                  <button
+                    key={cle}
+                    type="button"
+                    onClick={() => setFormVente({ ...formVente, type: cle })}
+                    style={{
+                      background: actif ? `${couleur}22` : "transparent",
+                      border: `1px solid ${actif ? couleur : C.bord2}`,
+                      color: actif ? C.texte : C.texte3,
+                      fontWeight: actif ? 700 : 600,
+                      fontSize: 12.5,
+                      padding: "7px 18px",
+                      borderRadius: 20,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              },
+            )}
+          </div>
 
           <form onSubmit={ajouterVente}>
             <div
@@ -914,40 +983,46 @@ export default function Compta({ isMobile }) {
             </div>
           </form>
 
-          {ventesSemaine.length === 0 ? (
+          {manuellesSemaine.length === 0 ? (
             <div style={{ ...u.vide, marginTop: 14 }}>
-              Aucune vente saisie à la main cette semaine.
+              Rien de saisi à la main cette semaine.
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
-              {ventesSemaine.map((v) => (
-                <div key={v.id} style={u.ligne}>
-                  <div style={{ minWidth: 150, flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 14.5 }}>{v.modele}</div>
-                    <div style={{ fontSize: 11.5, color: C.texte3, marginTop: 2 }}>
-                      {String(v.date).slice(0, 10)}
-                      {`${v.client_prenom || ""} ${v.client_nom || ""}`.trim()
-                        ? ` · ${`${v.client_prenom || ""} ${v.client_nom || ""}`.trim()}`
-                        : ""}
-                      {v.vendeur_nom ? ` · saisie par ${v.vendeur_prenom} ${v.vendeur_nom}` : ""}
+              {manuellesSemaine.map((v) => {
+                const vendu = v.type === "vente";
+                return (
+                  <div key={v.id} style={u.ligne}>
+                    <Etiquette ton={vendu ? "vert" : "bleu"}>
+                      {vendu ? "Vente" : "Rachat"}
+                    </Etiquette>
+                    <div style={{ minWidth: 140, flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14.5 }}>{v.modele}</div>
+                      <div style={{ fontSize: 11.5, color: C.texte3, marginTop: 2 }}>
+                        {String(v.date).slice(0, 10)}
+                        {`${v.client_prenom || ""} ${v.client_nom || ""}`.trim()
+                          ? ` · ${`${v.client_prenom || ""} ${v.client_nom || ""}`.trim()}`
+                          : ""}
+                        {v.vendeur_nom ? ` · saisie par ${v.vendeur_prenom} ${v.vendeur_nom}` : ""}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: C.titre,
+                        fontWeight: 800,
+                        fontSize: 17,
+                        color: vendu ? C.vert : C.rouge,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {vendu ? "+" : "−"}{argent(v.prix_final)}
+                    </div>
+                    <div style={{ marginLeft: "auto" }}>
+                      <BoutonSupprimer onConfirm={() => retirerVente(v)} />
                     </div>
                   </div>
-                  <div
-                    style={{
-                      fontFamily: C.titre,
-                      fontWeight: 800,
-                      fontSize: 17,
-                      color: C.vert,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {argent(v.prix_final)}
-                  </div>
-                  <div style={{ marginLeft: "auto" }}>
-                    <BoutonSupprimer onConfirm={() => retirerVente(v)} />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
