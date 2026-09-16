@@ -1073,9 +1073,13 @@ on("DELETE", "/genres/:id", "Co-patron", async (c) => {
 // ===========================================================================
 
 /** Vitrine publique : le stock, sans aucun détail financier interne. */
+// Le prix de base est celui du catalogue en jeu : tout le monde peut le voir,
+// et l afficher au-dessus du prix de vente montre au client ce qu il économise.
+// Ce qui reste interne, c est la réduction, la marge et le prix d achat.
 on("GET", "/vitrine", LIBRE, async (c) =>
   c.db.tous(
-    `SELECT id, modele, genre, classe, categorie, image, description, prix_vente
+    `SELECT id, modele, genre, classe, categorie, image, description,
+            prix_base, prix_vente
        FROM vehicules WHERE statut = 'stock' ORDER BY id DESC`,
   ));
 
@@ -1084,7 +1088,8 @@ on("GET", "/vehicules", CONNECTE, async (c) => {
   return c.db.tous(
     complet
       ? "SELECT * FROM vehicules ORDER BY id DESC"
-      : `SELECT id, modele, genre, classe, categorie, image, description, prix_vente, statut
+      : `SELECT id, modele, genre, classe, categorie, image, description,
+                prix_base, prix_vente, statut
            FROM vehicules WHERE statut = 'stock' ORDER BY id DESC`,
   );
 });

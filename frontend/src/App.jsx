@@ -637,8 +637,19 @@ const money = (n) =>
   new Intl.NumberFormat("fr-FR").format(Math.round(n)) + " $";
 
 function computePrices(v) {
-  // v.reduction et v.marge sont maintenant des MONTANTS FIXES ($), figés à
-  // l'enregistrement du véhicule selon les tranches de prix en vigueur.
+  // Les prix sont figés en base à l'enregistrement, et recalculés par le
+  // serveur si un patron les corrige. On affiche donc ce qui est stocké —
+  // c'est la seule version qui fasse foi, et elle arrive même dans les
+  // réponses allégées (vitrine publique) où réduction et marge sont absentes.
+  if (v.prixVente) {
+    return {
+      prixAchat: v.prixAchat || Math.max(0, (v.prixBase || 0) - (v.reduction || 0)),
+      prixVente: v.prixVente,
+    };
+  }
+
+  // Repli pour les fiches qui n'ont pas de prix figé (jeu de démo).
+  // v.reduction et v.marge sont des MONTANTS FIXES ($).
   const prixAchat = v.prixBase - (v.reduction || 0);
   const prixVenteCalcule = prixAchat + (v.marge || 0);
   // Garde-fou : un véhicule d'occasion ne doit jamais se revendre plus cher
@@ -783,11 +794,12 @@ function Vitrine({ vehicles, categories, role, isMobile }) {
   // Un véhicule vendu ne doit plus apparaître pour les visiteurs et les
   // vendeurs — seuls Manager/Co-patron/Patron gardent une trace complète.
   const vehiculesVisibles = internal ? vehicles : vehicles.filter((v) => v.statut === "En stock");
-  const [filtreType, setFiltreType] = useState(TOUTES);
   const [filtre, setFiltre] = useState(TOUTES);
-  const parType =
-    filtreType === TOUTES ? vehiculesVisibles : vehiculesVisibles.filter((v) => v.type === filtreType);
-  const affiches = filtre === TOUTES ? parType : parType.filter((v) => v.categorie === filtre);
+  // Plus de filtre Occasion / Import ici : un import racheté redevient une
+  // occasion, donc tout ce qui est en vitrine est une occasion. Le tag sur la
+  // fiche dit déjà de quoi il s agit.
+  const affiches =
+    filtre === TOUTES ? vehiculesVisibles : vehiculesVisibles.filter((v) => v.categorie === filtre);
 
   return (
     <section>
@@ -798,7 +810,6 @@ function Vitrine({ vehicles, categories, role, isMobile }) {
           affiché tout compris.
         </p>
       </div>
-      <CategoryFilter categories={TYPES_VEHICULE} selected={filtreType} onSelect={setFiltreType} />
       <CategoryFilter categories={categories} selected={filtre} onSelect={setFiltre} />
       <div style={{ ...s.grid, ...(isMobile ? s.gridMobile : {}) }}>
         {affiches.map((v) => (
