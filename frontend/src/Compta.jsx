@@ -215,7 +215,7 @@ function feuillesDu(etat, inclus = {}, archives = []) {
       const ligne = (cle, label, champ) => {
         if (!veut(cle)) return null;
         const l = de(cle);
-        return { poste: label, nombre: l.length, montant: total(l, champ) };
+        return { poste: label, nombre: l.length, montant: champ === "sortie" ? -total(l, champ) : total(l, champ) };
       };
       return {
         nom: f.nom,
@@ -233,12 +233,11 @@ function feuillesDu(etat, inclus = {}, archives = []) {
           { poste: "Total encaissé", montant: entrees },
           { poste: "Total décaissé", montant: -sorties },
           { poste: "Résultat de la semaine", montant: entrees - sorties },
+          { poste: "Sur le compte avant", montant: etat.soldeAvant || 0 },
+          { poste: "SUR LE COMPTE APRÈS", montant: etat.soldeApres || 0 },
           ...(complet
-            ? [
-                { poste: "Sur le compte avant", montant: etat.soldeAvant || 0 },
-                { poste: "SUR LE COMPTE APRÈS", montant: etat.soldeApres || 0 },
-              ]
-            : [{ poste: `Export partiel — hors ${exclus.join(", ").toLowerCase()}` }]),
+            ? []
+            : [{ poste: `Export partiel — hors ${exclus.join(", ").toLowerCase()} (le solde du compte les inclut)` }]),
         ],
       };
     }
