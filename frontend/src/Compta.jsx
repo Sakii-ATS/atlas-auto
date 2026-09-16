@@ -206,6 +206,9 @@ function feuillesDu(etat, inclus = {}, archives = []) {
   const exclus = POSTES.filter((f) => f.montant && !veut(f.cle)).map((f) => f.nom);
   const complet = exclus.length === 0;
 
+  // Ce que l Etat preleve sur le benefice brut, en pourcentage.
+  const taux = Number(etat.tauxImpot) || 0;
+
   return FEUILLES.map((f) => {
     const actif = f.cle === "Résumé" || veut(f.cle);
     const cols = f.colonnes;
@@ -233,11 +236,11 @@ function feuillesDu(etat, inclus = {}, archives = []) {
           { poste: "Total encaissé", montant: entrees },
           { poste: "Total décaissé", montant: -sorties },
           { poste: "Résultat de la semaine", montant: entrees - sorties },
-          { poste: "Sur le compte avant", montant: etat.soldeAvant || 0 },
-          { poste: "SUR LE COMPTE APRÈS", montant: (etat.soldeAvant || 0) + entrees - sorties },
+          { poste: "% déduit (impôts, provisions)", nombre: taux },
+          { poste: "BÉNÉFICE NET", montant: Math.round((entrees - sorties) * (1 - taux / 100)) },
           ...(complet
             ? []
-            : [{ poste: `Export partiel — hors ${exclus.join(", ").toLowerCase()} (non compris dans le solde)` }]),
+            : [{ poste: `Export partiel — hors ${exclus.join(", ").toLowerCase()}` }]),
         ],
       };
     }

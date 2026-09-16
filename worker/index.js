@@ -126,6 +126,8 @@ const PARAMETRES_DEFAUT = {
   salairePatron: "3500",
   primeParOperation: "250",
   soldeInitial: "0", // ce qu il y avait sur le compte avant qu on suive tout ici
+  // Part du benefice brut que l Etat preleve, en pourcentage.
+  pourcentageImpot: "50",
   // Réglage réservé au patron : laisse ou non corriger à la main la réduction
   // et la marge au moment d enregistrer un véhicule.
   prixLibres: "0",
@@ -147,6 +149,7 @@ async function lireParametres(db) {
     salairePatron: Number(out.salairePatron),
     primeParOperation: Number(out.primeParOperation),
     soldeInitial: Number(out.soldeInitial),
+    pourcentageImpot: Number(out.pourcentageImpot),
     prixLibres: out.prixLibres === "1" || out.prixLibres === true,
   };
 }
@@ -801,6 +804,7 @@ on("GET", "/compta", "Co-patron", async (c) => {
     sorties: totalAchats + totalDepenses + totalSalaires + totalDividendes,
     resultat:
       totalVentes - totalAchats - totalDepenses - totalSalaires - totalDividendes,
+    tauxImpot: p.pourcentageImpot,
     soldeAvant,
     soldeApres:
       soldeAvant + totalVentes - totalAchats - totalDepenses - totalSalaires - totalDividendes,
@@ -1591,7 +1595,7 @@ on("PUT", "/parametres", "Co-patron", async (c) => {
   const patch = {};
   for (const cle of [
     "reductionMaxVente", "kmIntervalle", "kmMontant", "nomEntreprise",
-    "salaireBase", "primeParOperation", "soldeInitial",
+    "salaireBase", "primeParOperation", "soldeInitial", "pourcentageImpot",
     "salaireVendeur", "salaireManager", "salaireCoPatron", "salairePatron",
   ]) {
     if (b[cle] !== undefined) patch[cle] = b[cle];

@@ -543,6 +543,7 @@ const SEED_PARAMETRES = {
   salairePatron: 3500,
   primeParOperation: 250,
   soldeInitial: 0,
+  pourcentageImpot: 50,
   prixLibres: false,
 };
 
@@ -2211,6 +2212,7 @@ function Parametres({ parametres, setParametres, reductionTiers, setReductionTie
   );
   const [primeParOperation, setPrimeParOperation] = useState(String(parametres.primeParOperation ?? 250));
   const [soldeInitial, setSoldeInitial] = useState(String(parametres.soldeInitial ?? 0));
+  const [pourcentageImpot, setPourcentageImpot] = useState(String(parametres.pourcentageImpot ?? 50));
   const [prixLibres, setPrixLibres] = useState(!!parametres.prixLibres);
   const estPatron = moi?.grade === "Patron";
 
@@ -2224,6 +2226,7 @@ function Parametres({ parametres, setParametres, reductionTiers, setReductionTie
       kmMontant: parseFloat(kmMontant) || 0,
       primeParOperation: Math.max(0, parseFloat(primeParOperation) || 0),
       soldeInitial: parseFloat(soldeInitial) || 0,
+      pourcentageImpot: Math.min(100, Math.max(0, parseFloat(pourcentageImpot) || 0)),
       // seul le patron a le droit d envoyer ce réglage — le serveur refuse les autres
       ...(estPatron ? { prixLibres } : {}),
       ...Object.fromEntries(
@@ -2377,6 +2380,21 @@ function Parametres({ parametres, setParametres, reductionTiers, setReductionTie
           les ventes et retire les rachats, dépenses, dividendes et salaires.
         </div>
 
+        <div style={s.formTitle2}>Impôts</div>
+        <label style={s.label}>% à déduire du bénéfice brut</label>
+        <input
+          style={s.input}
+          type="number"
+          value={pourcentageImpot}
+          onChange={(e) => setPourcentageImpot(e.target.value)}
+          placeholder="ex : 50"
+        />
+        <div style={s.previewHint}>
+          Le taux du modèle de comptabilité de l'État : 50 % par défaut. Le
+          Résumé de l'export affiche le bénéfice net, autrement dit le
+          résultat de la semaine moins ce pourcentage.
+        </div>
+
         <button type="submit" style={s.submitBtn} disabled={etat === "envoi"}>
           {etat === "envoi" ? "Enregistrement…" : etat === "ok" ? "Réglages enregistrés ✓" : "Enregistrer les réglages"}
         </button>
@@ -2479,6 +2497,7 @@ export default function App() {
         salairePatron: p.salairePatron,
         primeParOperation: p.primeParOperation,
         soldeInitial: p.soldeInitial,
+        pourcentageImpot: p.pourcentageImpot,
         prixLibres: !!p.prixLibres,
       });
       setReductionTiers(p.tranchesReduction || []);
