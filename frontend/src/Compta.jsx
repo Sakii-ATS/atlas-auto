@@ -234,10 +234,10 @@ function feuillesDu(etat, inclus = {}, archives = []) {
           { poste: "Total décaissé", montant: -sorties },
           { poste: "Résultat de la semaine", montant: entrees - sorties },
           { poste: "Sur le compte avant", montant: etat.soldeAvant || 0 },
-          { poste: "SUR LE COMPTE APRÈS", montant: etat.soldeApres || 0 },
+          { poste: "SUR LE COMPTE APRÈS", montant: (etat.soldeAvant || 0) + entrees - sorties },
           ...(complet
             ? []
-            : [{ poste: `Export partiel — hors ${exclus.join(", ").toLowerCase()} (le solde du compte les inclut)` }]),
+            : [{ poste: `Export partiel — hors ${exclus.join(", ").toLowerCase()} (non compris dans le solde)` }]),
         ],
       };
     }
