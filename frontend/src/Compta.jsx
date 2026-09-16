@@ -144,6 +144,27 @@ const FEUILLES = [
 // Les feuilles qu on peut retirer du fichier (le Résumé reste toujours).
 const POSTES = FEUILLES.filter((f) => f.cle !== "Résumé");
 
+// Le choix des feuilles et des colonnes est gardé dans le navigateur : changer
+// d onglet démonte l écran, sans ça tout se recocherait sans prévenir.
+const CLE_REGLAGE = "vapid-export";
+
+function lireReglage(nom) {
+  try {
+    return JSON.parse(localStorage.getItem(CLE_REGLAGE) || "{}")[nom] || {};
+  } catch {
+    return {};
+  }
+}
+
+function ecrireReglage(nom, valeur) {
+  try {
+    const tout = JSON.parse(localStorage.getItem(CLE_REGLAGE) || "{}");
+    localStorage.setItem(CLE_REGLAGE, JSON.stringify({ ...tout, [nom]: valeur }));
+  } catch {
+    // navigateur qui refuse le stockage : tant pis, on perd juste le choix
+  }
+}
+
 /**
  * Fabrique les feuilles du classeur.
  *
@@ -270,23 +291,34 @@ export default function Compta({ isMobile }) {
   const [dividendes, setDividendes] = useState([]);
   const [tresorerie, setTresorerie] = useState(null);
   const [detailSolde, setDetailSolde] = useState(false);
-  // tout est coché par défaut ; décocher sort la feuille ou la colonne du fichier
-  const [inclus, setInclus] = useState({});
-  const [colonnes, setColonnes] = useState({});
+  // Tout est coché par défaut ; décocher sort la feuille ou la colonne du
+  // fichier. On le garde dans le navigateur : sinon changer d onglet remet
+  // tout à zéro sans prévenir, et l export repart complet.
+  const [inclus, setInclus] = useState(() => lireReglage("inclus"));
+  const [colonnes, setColonnes] = useState(() => lireReglage("colonnes"));
+
+  useEffect(() => { ecrireReglage("inclus", inclus); }, [inclus]);
+  useEffect(() => { ecrireReglage("colonnes", colonnes); }, [colonnes]);
   const [form, setForm] = useState({ beneficiaire: "", montant: "", date: "", note: "" });
+  const [ventesM, setVentesM] = useState([]);
+  const [formVente, setFormVente] = useState({
+    modele: "", montant: "", date: "", clientNom: "", clientPrenom: "",
+  });
 
   async function recharger() {
     try {
-      const [c, a, d, t] = await Promise.all([
+      const [c, a, d, t, vm] = await Promise.all([
         api.compta(periode.debut, periode.fin),
         api.archivesCompta(),
         api.dividendes(),
         api.tresorerie(),
+        api.ventesManuelles(),
       ]);
       setEtat(c);
       setArchives(a);
       setDividendes(d.lignes || []);
       setTresorerie(t);
+      setVentesM(vm);
       setErreur("");
     } catch (e) {
       setErreur(e.message);
@@ -348,6 +380,39 @@ export default function Compta({ isMobile }) {
       });
       setForm({ beneficiaire: "", montant: "", date: "", note: "" });
       setErreur("");
+      recharger();
+    } catch (err) {
+      setErreur(err.message);
+    }
+  }
+
+  /** Les ventes saisies à la main qui tombent dans la semaine affichée. */
+  const ventesSemaine = ventesM.filter((v) => {
+    const j = String(v.date || "").slice(0, 10);
+    return j >= periode.debut && j <= periode.fin;
+  });
+
+  async function ajouterVente(e) {
+    e.preventDefault();
+    try {
+      await api.ajouterVenteManuelle({
+        modele: formVente.modele,
+        montant: formVente.montant,
+        date: formVente.date || periode.fin,
+        clientNom: formVente.clientNom,
+        clientPrenom: formVente.clientPrenom,
+      });
+      setFormVente({ modele: "", montant: "", date: "", clientNom: "", clientPrenom: "" });
+      setErreur("");
+      recharger();
+    } catch (err) {
+      setErreur(err.message);
+    }
+  }
+
+  async function retirerVente(v) {
+    try {
+      await api.supprimerVenteManuelle(v.id);
       recharger();
     } catch (err) {
       setErreur(err.message);
@@ -794,6 +859,99 @@ export default function Compta({ isMobile }) {
           </div>
         </div>
       </div>
+
+      {/* --------------------------------------------- ventes saisies à la main */}
+      {!ouverte && (
+        <div style={{ ...u.carte, marginBottom: 18 }}>
+          <h2 style={u.titreCarte}>Ajouter une vente à la main</h2>
+          <p style={u.aide}>
+            Pour ce qui s'est vendu en dehors du site. La ligne entre dans la compta
+            comme une vraie vente : elle encaisse, elle part dans l'export et dans
+            « Ventes réalisées ».
+          </p>
+
+          <form onSubmit={ajouterVente}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: isMobile ? "1fr" : "1.3fr 0.9fr 1fr 1fr 1fr auto",
+                gap: 12,
+                alignItems: "end",
+              }}
+            >
+              <Champ
+                label="Véhicule"
+                value={formVente.modele}
+                onChange={(e) => setFormVente({ ...formVente, modele: e.target.value })}
+                placeholder="Elegy RH8"
+              />
+              <Champ
+                label="Montant"
+                type="number"
+                value={formVente.montant}
+                onChange={(e) => setFormVente({ ...formVente, montant: e.target.value })}
+                placeholder="145000"
+              />
+              <Champ
+                label="Date"
+                type="date"
+                value={formVente.date || periode.fin}
+                onChange={(e) => setFormVente({ ...formVente, date: e.target.value })}
+              />
+              <Champ
+                label="Nom du client"
+                value={formVente.clientNom}
+                onChange={(e) => setFormVente({ ...formVente, clientNom: e.target.value })}
+                placeholder="Facultatif"
+              />
+              <Champ
+                label="Prénom"
+                value={formVente.clientPrenom}
+                onChange={(e) => setFormVente({ ...formVente, clientPrenom: e.target.value })}
+                placeholder="Facultatif"
+              />
+              <Bouton type="submit">Ajouter</Bouton>
+            </div>
+          </form>
+
+          {ventesSemaine.length === 0 ? (
+            <div style={{ ...u.vide, marginTop: 14 }}>
+              Aucune vente saisie à la main cette semaine.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
+              {ventesSemaine.map((v) => (
+                <div key={v.id} style={u.ligne}>
+                  <div style={{ minWidth: 150, flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14.5 }}>{v.modele}</div>
+                    <div style={{ fontSize: 11.5, color: C.texte3, marginTop: 2 }}>
+                      {String(v.date).slice(0, 10)}
+                      {`${v.client_prenom || ""} ${v.client_nom || ""}`.trim()
+                        ? ` · ${`${v.client_prenom || ""} ${v.client_nom || ""}`.trim()}`
+                        : ""}
+                      {v.vendeur_nom ? ` · saisie par ${v.vendeur_prenom} ${v.vendeur_nom}` : ""}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: C.titre,
+                      fontWeight: 800,
+                      fontSize: 17,
+                      color: C.vert,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {argent(v.prix_final)}
+                  </div>
+                  <div style={{ marginLeft: "auto" }}>
+                    <BoutonSupprimer onConfirm={() => retirerVente(v)} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ------------------------------------------------------------ dividendes */}
       {!ouverte && (

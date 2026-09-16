@@ -856,6 +856,58 @@ on("GET", "/tresorerie", "Co-patron", async (c) => {
   };
 });
 
+/**
+ * Une vente saisie à la main, pour rattraper ce qui s est fait hors du site.
+ * C est un mouvement comme un autre, sans véhicule rattaché — c est justement
+ * ce qui permet de le reconnaître et de le supprimer plus tard.
+ */
+on("POST", "/compta/ventes", "Co-patron", async (c) => {
+  const { modele, montant, date, clientNom, clientPrenom, clientClasse, note } = c.corps;
+  if (!modele || !String(modele).trim()) refus(400, "Indique ce qui a été vendu.");
+  const somme = Math.round(Number(montant) || 0);
+  if (somme <= 0) refus(400, "Le montant doit être supérieur à zéro.");
+
+  const { id } = await c.db.exec(
+    `INSERT INTO mouvements
+       (type, vehicule_id, modele, genre, image, prix_initial, prix_final,
+        client_nom, client_prenom, client_classe, vendeur_nom, vendeur_prenom, employe_id, date)
+     VALUES ('vente', NULL, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    String(modele).trim(),
+    String(note || ""),
+    somme, somme,
+    String(clientNom || "").trim(),
+    String(clientPrenom || "").trim(),
+    String(clientClasse || ""),
+    c.employe.nom, c.employe.prenom, c.employe.id,
+    `${date || new Date().toISOString().slice(0, 10)} 12:00:00`,
+  );
+  return c.db.un("SELECT * FROM mouvements WHERE id = ?", id);
+});
+
+/** Ne supprime que les ventes saisies à la main — jamais une vraie vente. */
+on("DELETE", "/compta/ventes/:id", "Co-patron", async (c) => {
+  const m = await c.db.un(
+    "SELECT id, vehicule_id FROM mouvements WHERE id = ? AND type = 'vente'",
+    c.params.id,
+  );
+  if (!m) refus(404, "Vente introuvable.");
+  if (m.vehicule_id !== null) {
+    refus(400, "Cette vente vient d un véhicule du stock : elle se supprime depuis « Ventes réalisées ».");
+  }
+  await c.db.exec("DELETE FROM mouvements WHERE id = ?", m.id);
+  return { fait: true };
+});
+
+/** Les ventes saisies à la main, pour pouvoir les relire et les retirer. */
+on("GET", "/compta/ventes", "Co-patron", async (c) =>
+  c.db.tous(
+    `SELECT id, modele, genre, prix_final, date, client_nom, client_prenom,
+            vendeur_nom, vendeur_prenom
+       FROM mouvements
+      WHERE type = 'vente' AND vehicule_id IS NULL
+      ORDER BY date DESC, id DESC`,
+  ));
+
 /** Les semaines déjà enregistrées, la plus récente d abord. */
 on("GET", "/compta/archives", "Co-patron", async (c) =>
   c.db.tous(

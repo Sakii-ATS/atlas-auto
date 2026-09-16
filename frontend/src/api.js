@@ -147,6 +147,9 @@ export const api = {
   },
 
   tresorerie: () => get("/tresorerie"),
+  ventesManuelles: () => get("/compta/ventes"),
+  ajouterVenteManuelle: (v) => post("/compta/ventes", v),
+  supprimerVenteManuelle: (id) => del(`/compta/ventes/${id}`),
   archivesCompta: () => get("/compta/archives"),
   archiveCompta: (id) => get(`/compta/archives/${id}`),
   archiverCompta: (a) => post("/compta/archives", a),
