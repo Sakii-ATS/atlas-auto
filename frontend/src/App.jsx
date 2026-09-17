@@ -25,6 +25,7 @@ const depuisApi = (v) => ({
   prixAchat: v.prix_achat ?? 0,
   prixVente: v.prix_vente ?? 0,
   achatPar: v.achete_par || "",
+  custom: !!v.custom,
   statut: v.statut === "vendu" ? "Vendu" : "En stock",
 });
 
@@ -739,6 +740,7 @@ function VehicleCard({ v, showStatusBadge, showTypeBadge, showInternal, showBase
           <div style={s.cardTitle}>{v.nom}</div>
           {v.classe && <Badge tone={TON_CLASSE[v.classe] || "grey"}>Classe {v.classe}</Badge>}
           {v.categorie && <Badge tone="grey">{v.categorie}</Badge>}
+          {v.custom && <Badge tone="blue">Custom</Badge>}
         </div>
 
         {showBasePrice ? (
@@ -760,6 +762,10 @@ function VehicleCard({ v, showStatusBadge, showTypeBadge, showInternal, showBase
             <span style={s.cardPrice}>{money(prixVente)}</span>
           </div>
         )}
+
+        <div style={{ ...s.cardPriceLabel, marginTop: 6, fontStyle: "italic" }}>
+          Prix négociable
+        </div>
 
         {showInternal && (
           <div style={s.internalGrid}>
@@ -1189,6 +1195,7 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
     clientNom: "",
     clientPrenom: "",
     clientClasse: "A",
+    custom: false,
   });
   const [rechercheModele, setRechercheModele] = useState(catalogue[0]?.nom ?? "");
   const [aSupprimer, setASupprimer] = useState(null);
@@ -1257,6 +1264,7 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
         clientNom: form.clientNom,
         clientPrenom: form.clientPrenom,
         clientClasse: form.clientClasse,
+        custom: form.custom,
         ...(modifie ? { reduction: reductionApplicable, marge: margeApplicable } : {}),
       });
       setReductionSaisie(null);
@@ -1270,6 +1278,7 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
         clientNom: "",
         clientPrenom: "",
         clientClasse: "A",
+        custom: false,
       });
       setRechercheModele(catalogue[0]?.nom ?? "");
       onRefresh?.();
@@ -1283,6 +1292,18 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
     if (!v) return;
     try {
       await api.majVehicule(id, { statut: v.statut === "En stock" ? "vendu" : "stock" });
+      onRefresh?.();
+    } catch (e) {
+      onErreur?.(e.message);
+    }
+  }
+
+  /** Marquer un véhicule comme custom, ou revenir à standard. */
+  async function toggleCustom(id) {
+    const v = vehicles.find((x) => x.id === id);
+    if (!v) return;
+    try {
+      await api.majVehicule(id, { custom: !v.custom });
       onRefresh?.();
     } catch (e) {
       onErreur?.(e.message);
@@ -1455,6 +1476,26 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
             placeholder="Ex : état impeccable, jantes custom, intérieur cuir..."
           />
 
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              cursor: "pointer",
+              margin: "12px 0 2px",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={form.custom}
+              onChange={(e) => setForm({ ...form, custom: e.target.checked })}
+              style={{ accentColor: "#C9962F", width: 16, height: 16 }}
+            />
+            <span style={{ fontSize: 13, color: "#D8DBE2" }}>
+              Véhicule custom (tuning, pièces non d'origine)
+            </span>
+          </label>
+
           {true && (
             <>
               <div style={s.formTitle2}>Le joueur qui nous vend le véhicule</div>
@@ -1619,6 +1660,7 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
                       <span style={{ fontWeight: 700 }}>{v.nom}</span>
                       <Badge tone={v.type === "Import" ? "blue" : "amber"}>{v.type}</Badge>
                       {v.categorie && <Badge tone="grey">{v.categorie}</Badge>}
+                      {v.custom && <Badge tone="blue">Custom</Badge>}
                     </div>
                     <div style={s.stockMeta}>
                       Base {money(v.prixBase)} · Achat {money(prixAchat)} · Vente {money(prixVente)}
@@ -1645,6 +1687,15 @@ function EspaceGestion({ vehicles, onRefresh, onErreur, role, catalogue, categor
                         {retouche?.id === v.id ? "Fermer" : "Modifier"}
                       </button>
                     )}
+                    <button
+                      style={{
+                        ...s.statutBtn,
+                        ...(v.custom ? { borderColor: "#6FA8D8", color: "#6FA8D8" } : {}),
+                      }}
+                      onClick={() => toggleCustom(v.id)}
+                    >
+                      {v.custom ? "Custom" : "Standard"}
+                    </button>
                     <button
                       style={{
                         ...s.statutBtn,

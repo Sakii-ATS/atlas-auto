@@ -1139,7 +1139,7 @@ on("DELETE", "/genres/:id", "Co-patron", async (c) => {
 on("GET", "/vitrine", LIBRE, async (c) =>
   c.db.tous(
     `SELECT id, modele, genre, classe, categorie, image, description,
-            prix_base, prix_vente
+            prix_base, prix_vente, custom
        FROM vehicules WHERE statut = 'stock' ORDER BY id DESC`,
   ));
 
@@ -1149,14 +1149,14 @@ on("GET", "/vehicules", CONNECTE, async (c) => {
     complet
       ? "SELECT * FROM vehicules ORDER BY id DESC"
       : `SELECT id, modele, genre, classe, categorie, image, description,
-                prix_base, prix_vente, statut
+                prix_base, prix_vente, statut, custom
            FROM vehicules WHERE statut = 'stock' ORDER BY id DESC`,
   );
 });
 
 on("POST", "/vehicules", "Vendeur/Vendeuse", async (c) => {
   const { modele, categorie, image, description,
-          clientNom, clientPrenom, clientClasse, reduction, marge } = c.corps;
+          clientNom, clientPrenom, clientClasse, reduction, marge, custom } = c.corps;
   if (!modele) refus(400, "Choisis un modèle.");
   if (!["Occasion", "Import"].includes(categorie)) {
     refus(400, "Catégorie attendue : Occasion ou Import.");
@@ -1198,12 +1198,13 @@ on("POST", "/vehicules", "Vendeur/Vendeuse", async (c) => {
   });
   const { id } = await c.db.exec(
     `INSERT INTO vehicules
-       (modele, genre, classe, categorie, image, description, prix_base, reduction, marge, prix_achat, prix_vente, achete_par)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (modele, genre, classe, categorie, image, description, prix_base, reduction, marge, prix_achat, prix_vente, achete_par, custom)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     fiche.nom, fiche.genre, fiche.classe || "", categorie,
     String(image || ""), String(description || ""),
     prix.prixBase, prix.reduction, prix.marge, prix.prixAchat, prix.prixVente,
     `${c.employe.prenom} ${c.employe.nom}`,
+    custom ? 1 : 0,
   );
   const vehicule = await c.db.un("SELECT * FROM vehicules WHERE id = ?", id);
 
@@ -1237,8 +1238,9 @@ on("PATCH", "/vehicules/:id", "Manager", async (c) => {
 
   // Photo, description et statut : tout le monde à partir de Manager.
   await c.db.exec(
-    "UPDATE vehicules SET image = ?, description = ?, statut = ? WHERE id = ?",
-    b.image ?? v.image, b.description ?? v.description, b.statut ?? v.statut, v.id,
+    "UPDATE vehicules SET image = ?, description = ?, statut = ?, custom = ? WHERE id = ?",
+    b.image ?? v.image, b.description ?? v.description, b.statut ?? v.statut,
+    b.custom === undefined ? v.custom : (b.custom ? 1 : 0), v.id,
   );
 
   // Toucher aux prix, c est réservé aux patrons.
