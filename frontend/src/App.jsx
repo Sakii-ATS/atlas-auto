@@ -740,7 +740,6 @@ function VehicleCard({ v, showStatusBadge, showTypeBadge, showInternal, showBase
           <div style={s.cardTitle}>{v.nom}</div>
           {v.classe && <Badge tone={TON_CLASSE[v.classe] || "grey"}>Classe {v.classe}</Badge>}
           {v.categorie && <Badge tone="grey">{v.categorie}</Badge>}
-          {v.custom && <Badge tone="blue">Custom</Badge>}
         </div>
 
         {showBasePrice ? (
@@ -763,8 +762,17 @@ function VehicleCard({ v, showStatusBadge, showTypeBadge, showInternal, showBase
           </div>
         )}
 
-        <div style={{ ...s.cardPriceLabel, marginTop: 6, fontStyle: "italic" }}>
-          Prix négociable
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+            marginTop: 6,
+          }}
+        >
+          <span style={{ ...s.cardPriceLabel, fontStyle: "italic" }}>Prix négociable</span>
+          {v.custom && <Badge tone="blue">Custom</Badge>}
         </div>
 
         {showInternal && (
@@ -2941,7 +2949,7 @@ const s = {
   cardImageTopLeft: { position: "absolute", top: 10, left: 10 },
   cardImageTopRight: { position: "absolute", top: 10, right: 10 },
   cardBody: { padding: "14px 16px 18px" },
-  cardTitleRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 6 },
+  cardTitleRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" },
   cardTitle: { fontWeight: 700, fontSize: 16 },
   cardPriceRow: { display: "flex", justifyContent: "space-between", alignItems: "baseline" },
   cardPriceLabel: { fontSize: 12, color: "#71767F" },
