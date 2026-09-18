@@ -161,10 +161,10 @@ export const api = {
   majDepense: (id, d) => patch(`/depenses/${id}`, d),
   supprimerDepense: (id) => del(`/depenses/${id}`),
 
-  // ------------------------------------------------------------ dividendes
-  dividendes: () => get("/dividendes"),
-  ajouterDividende: (d) => post("/dividendes", d),
-  supprimerDividende: (id) => del(`/dividendes/${id}`),
+  // ------------------------------------------------------------ primes
+  primes: () => get("/primes"),
+  ajouterPrime: (d) => post("/primes", d),
+  supprimerPrime: (id) => del(`/primes/${id}`),
 
   // ------------------------------------------------------- catalogue/genres
   catalogue: () => get("/catalogue"),

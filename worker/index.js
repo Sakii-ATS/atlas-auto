@@ -661,9 +661,9 @@ on("GET", "/compta", "Co-patron", async (c) => {
        FROM depenses WHERE date BETWEEN ? AND ? ORDER BY date`,
     debut, fin,
   );
-  const dividendes = await c.db.tous(
-    `SELECT beneficiaire, montant, date, note, saisi_par
-       FROM dividendes WHERE date BETWEEN ? AND ? ORDER BY date`,
+  const primes = await c.db.tous(
+    `SELECT employe_id, beneficiaire, montant, date, note, saisi_par
+       FROM primes WHERE date BETWEEN ? AND ? ORDER BY date`,
     debut, fin,
   );
 
@@ -685,13 +685,18 @@ on("GET", "/compta", "Co-patron", async (c) => {
       ORDER BY e.nom`,
     debut, fin, debut, fin,
   );
+  // Une prime est versée à un employé : elle part avec sa paie, pas à côté.
+  const primeDe = new Map();
+  for (const x of primes) {
+    const cle = x.employe_id;
+    if (cle === null || cle === undefined) continue;
+    primeDe.set(cle, (primeDe.get(cle) || 0) + (Number(x.montant) || 0));
+  }
   const salaires = employes.map((e) => {
     const operations = e.ventes + e.achats;
-    return {
-      ...e,
-      operations,
-      salaire: fixeDuGrade(p, e.grade) + operations * prime,
-    };
+    const fixe = fixeDuGrade(p, e.grade);
+    const bonus = operations * prime + (primeDe.get(e.id) || 0);
+    return { ...e, operations, fixe, primes: bonus, salaire: fixe + bonus };
   });
 
   const ventes = mouvements.filter((m) => m.type === "vente");
@@ -708,7 +713,7 @@ on("GET", "/compta", "Co-patron", async (c) => {
        COALESCE((SELECT SUM(prix_final) FROM mouvements
                   WHERE type = 'achat' AND date(date) < ?), 0) AS achats,
        COALESCE((SELECT SUM(montant) FROM depenses   WHERE date < ?), 0) AS depenses,
-       COALESCE((SELECT SUM(montant) FROM dividendes WHERE date < ?), 0) AS dividendes`,
+       COALESCE((SELECT SUM(montant) FROM primes WHERE date < ?), 0) AS primes`,
     debut, debut, debut, debut,
   );
   const archivesAvant = await c.db.tous(
@@ -729,14 +734,19 @@ on("GET", "/compta", "Co-patron", async (c) => {
     (Number(avant.ventes) || 0) -
     (Number(avant.achats) || 0) -
     (Number(avant.depenses) || 0) -
-    (Number(avant.dividendes) || 0) -
+    (Number(avant.primes) || 0) -
     salairesAvant;
 
   const totalVentes = somme(ventes, "prix_final");
   const totalAchats = somme(achats, "prix_final");
   const totalDepenses = somme(depenses, "montant");
   const totalSalaires = somme(salaires, "salaire");
-  const totalDividendes = somme(dividendes, "montant");
+  const totalPrimes = somme(primes, "montant");
+  // Une prime versée à quelqu un qui n est plus dans l effectif ne doit pas
+  // disparaître du compte : elle repart sur sa propre ligne.
+  const actifs = new Set(employes.map((e) => e.id));
+  const orphelines = primes.filter((x) => !actifs.has(x.employe_id));
+  const totalOrphelines = somme(orphelines, "montant");
 
   // Le journal, dans l ordre chronologique. Entrée = ce qui rentre en caisse.
   const jour = (d) => String(d || "").slice(0, 10);
@@ -770,9 +780,9 @@ on("GET", "/compta", "Co-patron", async (c) => {
       entree: 0,
       sortie: d.montant,
     })),
-    ...dividendes.map((d) => ({
+    ...orphelines.map((d) => ({
       date: jour(d.date),
-      type: "Dividende",
+      type: "Prime",
       libelle: d.beneficiaire,
       detail: d.note,
       par: d.saisi_par,
@@ -788,6 +798,8 @@ on("GET", "/compta", "Co-patron", async (c) => {
         libelle: `${s.prenom} ${s.nom}`,
         detail: `${s.grade} — ${s.operations} opération(s)`,
         par: "",
+        fixe: s.fixe,
+        primes: s.primes,
         entree: 0,
         sortie: s.salaire,
       })),
@@ -799,15 +811,15 @@ on("GET", "/compta", "Co-patron", async (c) => {
     achats: { nombre: achats.length, total: totalAchats },
     depenses: { nombre: depenses.length, total: totalDepenses },
     salaires: { nombre: salaires.length, total: totalSalaires, lignes: salaires },
-    dividendes: { nombre: dividendes.length, total: totalDividendes },
+    primes: { nombre: primes.length, total: totalPrimes },
     entrees: totalVentes,
-    sorties: totalAchats + totalDepenses + totalSalaires + totalDividendes,
+    sorties: totalAchats + totalDepenses + totalSalaires + totalOrphelines,
     resultat:
-      totalVentes - totalAchats - totalDepenses - totalSalaires - totalDividendes,
+      totalVentes - totalAchats - totalDepenses - totalSalaires - totalOrphelines,
     tauxImpot: p.pourcentageImpot,
     soldeAvant,
     soldeApres:
-      soldeAvant + totalVentes - totalAchats - totalDepenses - totalSalaires - totalDividendes,
+      soldeAvant + totalVentes - totalAchats - totalDepenses - totalSalaires - totalPrimes,
     lignes,
   };
 });
@@ -828,7 +840,6 @@ on("GET", "/tresorerie", "Co-patron", async (c) => {
        FROM mouvements`,
   );
   const d = await c.db.un("SELECT COALESCE(SUM(montant), 0) AS total FROM depenses");
-  const v = await c.db.un("SELECT COALESCE(SUM(montant), 0) AS total FROM dividendes");
 
   const archives = await c.db.tous("SELECT donnees FROM comptas");
   let salaires = 0;
@@ -844,14 +855,13 @@ on("GET", "/tresorerie", "Co-patron", async (c) => {
 
   const entrees = Number(m.ventes) || 0;
   const sorties =
-    (Number(m.achats) || 0) + (Number(d.total) || 0) + (Number(v.total) || 0) + salaires;
+    (Number(m.achats) || 0) + (Number(d.total) || 0) + salaires;
 
   return {
     depart,
     ventes: Number(m.ventes) || 0,
     achats: Number(m.achats) || 0,
     depenses: Number(d.total) || 0,
-    dividendes: Number(v.total) || 0,
     salaires,
     semainesPayees: archives.length,
     entrees,
@@ -919,13 +929,14 @@ on("GET", "/compta/archives", "Co-patron", async (c) =>
   c.db.tous(
     `SELECT id, debut, fin, entrees, sorties, resultat, note, cree_par, cree_le,
             json_extract(donnees, '$.soldeAvant') AS solde_avant,
-            json_extract(donnees, '$.soldeApres') AS solde_apres
+            json_extract(donnees, '$.soldeApres') AS solde_apres,
+            json_extract(donnees, '$.taux') AS taux
        FROM comptas ORDER BY debut DESC, id DESC`,
   ));
 
 /** Fige la période : les totaux sont recopiés, ils ne bougeront plus. */
 on("POST", "/compta/archives", "Co-patron", async (c) => {
-  const { debut, fin, entrees, sorties, resultat, lignes, note, soldeAvant, soldeApres } =
+  const { debut, fin, entrees, sorties, resultat, lignes, note, soldeAvant, soldeApres, taux } =
     c.corps;
   if (!debut || !fin) refus(400, "Période incomplète.");
 
@@ -945,6 +956,8 @@ on("POST", "/compta/archives", "Co-patron", async (c) => {
       lignes: lignes || [],
       soldeAvant: Math.round(Number(soldeAvant) || 0),
       soldeApres: Math.round(Number(soldeApres) || 0),
+      // le taux du moment : une archive ne doit pas bouger si on le change apres
+      taux: Math.round(Number(taux) || 0),
     }),
     String(note || ""),
     `${c.employe.prenom} ${c.employe.nom}`,
@@ -1009,38 +1022,40 @@ on("DELETE", "/depenses/:id", "Co-patron", async (c) => {
 });
 
 // ===========================================================================
-// DIVIDENDES — ce que les patrons se versent sur les bénéfices
+// PRIMES — ce qu on verse en plus du salaire, aux employés comme à nous
 // ===========================================================================
 
-on("GET", "/dividendes", "Co-patron", async (c) => {
+on("GET", "/primes", "Co-patron", async (c) => {
   const lignes = await c.db.tous(
-    "SELECT * FROM dividendes ORDER BY date DESC, id DESC",
+    "SELECT * FROM primes ORDER BY date DESC, id DESC",
   );
   return { lignes, total: lignes.reduce((s, d) => s + d.montant, 0) };
 });
 
-on("POST", "/dividendes", "Co-patron", async (c) => {
-  const { beneficiaire, montant, date, note } = c.corps;
-  if (!beneficiaire || !String(beneficiaire).trim()) {
-    refus(400, "Indique qui touche la dividende.");
-  }
+on("POST", "/primes", "Co-patron", async (c) => {
+  const { employeId, montant, date, note } = c.corps;
+  const e = await c.db.un(
+    "SELECT id, nom, prenom FROM employes WHERE id = ?", employeId,
+  );
+  if (!e) refus(400, "Choisis l employé qui touche la prime.");
   const somme = Math.round(Number(montant) || 0);
   if (somme <= 0) refus(400, "Le montant doit être supérieur à zéro.");
 
   const { id } = await c.db.exec(
-    `INSERT INTO dividendes (beneficiaire, montant, date, note, saisi_par)
-     VALUES (?, ?, ?, ?, ?)`,
-    String(beneficiaire).trim(),
+    `INSERT INTO primes (employe_id, beneficiaire, montant, date, note, saisi_par)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    e.id,
+    `${e.prenom} ${e.nom}`,
     somme,
     date || new Date().toISOString().slice(0, 10),
     String(note || ""),
     `${c.employe.prenom} ${c.employe.nom}`,
   );
-  return c.db.un("SELECT * FROM dividendes WHERE id = ?", id);
+  return c.db.un("SELECT * FROM primes WHERE id = ?", id);
 });
 
-on("DELETE", "/dividendes/:id", "Co-patron", async (c) => {
-  await c.db.exec("DELETE FROM dividendes WHERE id = ?", c.params.id);
+on("DELETE", "/primes/:id", "Co-patron", async (c) => {
+  await c.db.exec("DELETE FROM primes WHERE id = ?", c.params.id);
   return { fait: true };
 });
 

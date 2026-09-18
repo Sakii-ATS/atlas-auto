@@ -46,10 +46,10 @@ function libellePeriode({ debut, fin }) {
 // -------------------------------------------------------------------- calculs
 
 const TON_TYPE = {
-  Vente: "vert", Rachat: "bleu", Dépense: "gris", Salaire: "gris", Dividende: "ambre",
+  Vente: "vert", Rachat: "bleu", Dépense: "gris", Salaire: "gris",
 };
 
-const TYPES = ["Tout", "Vente", "Rachat", "Dépense", "Salaire", "Dividende"];
+const TYPES = ["Tout", "Vente", "Rachat", "Dépense", "Salaire"];
 
 /**
  * Le catalogue des feuilles du classeur : pour chacune, son nom, le type de
@@ -109,20 +109,10 @@ const FEUILLES = [
     colonnes: [
       { titre: "Date", cle: "date", type: "date" },
       { titre: "Employé", cle: "libelle" },
-      { titre: "Détail", cle: "detail" },
-      { titre: "Salaire", cle: "sortie", type: "argent" },
-    ],
-  },
-  {
-    cle: "Dividende",
-    nom: "Dividendes",
-    montant: "sortie",
-    colonnes: [
-      { titre: "Date", cle: "date", type: "date" },
-      { titre: "Bénéficiaire", cle: "libelle" },
-      { titre: "Motif", cle: "detail" },
-      { titre: "Versé par", cle: "par" },
-      { titre: "Montant", cle: "sortie", type: "argent" },
+      { titre: "Grade", cle: "detail" },
+      { titre: "Fixe", cle: "fixe", type: "argent" },
+      { titre: "Primes", cle: "primes", type: "argent" },
+      { titre: "Total versé", cle: "sortie", type: "argent" },
     ],
   },
   {
@@ -130,13 +120,14 @@ const FEUILLES = [
     nom: "Historique",
     historique: true,
     colonnes: [
-      { titre: "Du", cle: "debut", type: "date" },
-      { titre: "Au", cle: "fin", type: "date" },
-      { titre: "Encaissé", cle: "entrees", type: "argent" },
-      { titre: "Décaissé", cle: "sorties", type: "argent" },
-      { titre: "Résultat", cle: "resultat", type: "argent" },
-      { titre: "Sur le compte après", cle: "solde", type: "argent" },
-      { titre: "Enregistrée par", cle: "par" },
+      { titre: "Semaine du", cle: "debut", type: "date" },
+      { titre: "au", cle: "fin", type: "date" },
+      { titre: "Chiffre d'affaires", cle: "ca", type: "argent" },
+      { titre: "Consommations intermédiaires", cle: "conso", type: "argent" },
+      { titre: "Bénéfice brut", cle: "brut", type: "argent" },
+      { titre: "% déduit", cle: "taux", type: "nombre" },
+      { titre: "Bénéfice net", cle: "net", type: "argent" },
+      { titre: "Établi par", cle: "par" },
     ],
   },
   {
@@ -201,6 +192,11 @@ function feuillesDu(etat, inclus = {}, archives = []) {
   const entrees = total(lignes, "entree");
   const sorties = total(lignes, "sortie");
 
+  // Le décret range dans les consommations intermédiaires « toutes les
+  // dépenses, notamment les salaires et les primes » : tout ce qui sort du
+  // compte descend le bénéfice brut.
+  const brut = entrees - sorties;
+
   // Seuls les postes qui portent de l argent changent les totaux. Retirer le
   // Journal ou l Historique ne fausse rien : ce sont d autres vues.
   const exclus = POSTES.filter((f) => f.montant && !veut(f.cle)).map((f) => f.nom);
@@ -208,6 +204,7 @@ function feuillesDu(etat, inclus = {}, archives = []) {
 
   // Ce que l Etat preleve sur le benefice brut, en pourcentage.
   const taux = Number(etat.tauxImpot) || 0;
+  const net = Math.round(brut * (1 - taux / 100));
 
   return FEUILLES.map((f) => {
     const actif = f.cle === "Résumé" || veut(f.cle);
@@ -228,16 +225,15 @@ function feuillesDu(etat, inclus = {}, archives = []) {
           ligne("Rachat", "Rachats (décaissé)", "sortie"),
           ligne("Dépense", "Dépenses (décaissé)", "sortie"),
           ligne("Salaire", "Salaires (décaissé)", "sortie"),
-          ligne("Dividende", "Dividendes (décaissé)", "sortie"),
         ].filter(Boolean),
         // Les décaissés sont en négatif : la colonne s additionne de haut en
         // bas et tombe juste sur le solde final.
         pied: [
-          { poste: "Total encaissé", montant: entrees },
-          { poste: "Total décaissé", montant: -sorties },
-          { poste: "Résultat de la semaine", montant: entrees - sorties },
-          { poste: "% déduit (impôts, provisions)", nombre: taux },
-          { poste: "BÉNÉFICE NET", montant: Math.round((entrees - sorties) * (1 - taux / 100)) },
+          { poste: "Chiffre d'affaires (CA)", montant: entrees },
+          { poste: "Consommations intermédiaires", montant: -sorties },
+          { poste: "BÉNÉFICE BRUT", montant: brut },
+          { poste: "% déduit (taxes payées)", nombre: taux },
+          { poste: "BÉNÉFICE NET", montant: net },
           ...(complet
             ? []
             : [{ poste: `Export partiel — hors ${exclus.join(", ").toLowerCase()}` }]),
@@ -249,25 +245,33 @@ function feuillesDu(etat, inclus = {}, archives = []) {
     if (f.historique) {
       // de la plus ancienne à la plus récente : c est le sens d une évolution
       const semaines = actif ? [...archives].sort((a, b) => (a.debut < b.debut ? -1 : 1)) : [];
-      const somme = (champ) => semaines.reduce((s, x) => s + (Number(x[champ]) || 0), 0);
+      // Le taux figé au moment de l archivage ; les vieilles archives n en ont
+      // pas, on reprend celui d aujourd hui.
+      const bilans = semaines.map((a) => {
+        const tx = a.taux === null || a.taux === undefined || a.taux === "" ? taux : Number(a.taux) || 0;
+        const brutSemaine = Number(a.resultat) || 0;
+        return {
+          debut: a.debut,
+          fin: a.fin,
+          ca: Number(a.entrees) || 0,
+          conso: -(Number(a.sorties) || 0),
+          brut: brutSemaine,
+          taux: tx,
+          net: Math.round(brutSemaine * (1 - tx / 100)),
+          par: a.cree_par || "",
+        };
+      });
+      const cumul = (champ) => bilans.reduce((s, x) => s + (Number(x[champ]) || 0), 0);
       return {
         nom: f.nom,
         colonnes: cols,
-        lignes: semaines.map((a) => ({
-          debut: a.debut,
-          fin: a.fin,
-          entrees: a.entrees,
-          sorties: a.sorties,
-          resultat: a.resultat,
-          // les vieilles archives n ont pas de solde enregistré
-          solde: a.solde_apres ?? "",
-          par: a.cree_par || "",
-        })),
+        lignes: bilans,
         pied: [{
-          fin: "TOTAL",
-          entrees: somme("entrees"),
-          sorties: somme("sorties"),
-          resultat: somme("resultat"),
+          debut: "TOTAL",
+          ca: cumul("ca"),
+          conso: cumul("conso"),
+          brut: cumul("brut"),
+          net: cumul("net"),
         }],
       };
     }
@@ -309,7 +313,6 @@ function postes(lignes = []) {
     achats: poste("Rachat", "sortie"),
     depenses: poste("Dépense", "sortie"),
     salaires: poste("Salaire", "sortie"),
-    dividendes: poste("Dividende", "sortie"),
   };
 }
 
@@ -331,7 +334,8 @@ export default function Compta({ isMobile }) {
   const [info, setInfo] = useState("");
   const [filtre, setFiltre] = useState("Tout");
   const [occupe, setOccupe] = useState(false);
-  const [dividendes, setDividendes] = useState([]);
+  const [primes, setPrimes] = useState([]);
+  const [employes, setEmployes] = useState([]);
   const [tresorerie, setTresorerie] = useState(null);
   const [detailSolde, setDetailSolde] = useState(false);
   // Tout est coché par défaut ; décocher sort la feuille ou la colonne du
@@ -340,7 +344,7 @@ export default function Compta({ isMobile }) {
   const [inclus, setInclus] = useState(() => lireReglage("inclus"));
 
   useEffect(() => { ecrireReglage("inclus", inclus); }, [inclus]);
-  const [form, setForm] = useState({ beneficiaire: "", montant: "", date: "", note: "" });
+  const [form, setForm] = useState({ employeId: "", montant: "", date: "", note: "" });
   const [manuelles, setManuelles] = useState([]);
   const [formVente, setFormVente] = useState({
     type: "vente", modele: "", montant: "", date: "", clientNom: "", clientPrenom: "",
@@ -348,18 +352,20 @@ export default function Compta({ isMobile }) {
 
   async function recharger() {
     try {
-      const [c, a, d, t, vm] = await Promise.all([
+      const [c, a, d, t, vm, emp] = await Promise.all([
         api.compta(periode.debut, periode.fin),
         api.archivesCompta(),
-        api.dividendes(),
+        api.primes(),
         api.tresorerie(),
         api.lignesManuelles(),
+        api.employes().catch(() => []),
       ]);
       setEtat(c);
       setArchives(a);
-      setDividendes(d.lignes || []);
+      setPrimes(d.lignes || []);
       setTresorerie(t);
       setManuelles(vm);
+      setEmployes(Array.isArray(emp) ? emp : []);
       setErreur("");
     } catch (e) {
       setErreur(e.message);
@@ -405,21 +411,21 @@ export default function Compta({ isMobile }) {
     }
   }
 
-  /** Les dividendes versées sur la semaine affichée. */
-  const dividendesSemaine = dividendes.filter(
+  /** Les primes versées sur la semaine affichée. */
+  const primesSemaine = primes.filter(
     (d) => d.date >= periode.debut && d.date <= periode.fin,
   );
 
   async function verser(e) {
     e.preventDefault();
     try {
-      await api.ajouterDividende({
-        beneficiaire: form.beneficiaire,
+      await api.ajouterPrime({
+        employeId: form.employeId,
         montant: form.montant,
         date: form.date || periode.fin,
         note: form.note,
       });
-      setForm({ beneficiaire: "", montant: "", date: "", note: "" });
+      setForm({ employeId: "", montant: "", date: "", note: "" });
       setErreur("");
       recharger();
     } catch (err) {
@@ -461,9 +467,9 @@ export default function Compta({ isMobile }) {
     }
   }
 
-  async function annulerDividende(d) {
+  async function annulerPrime(d) {
     try {
-      await api.supprimerDividende(d.id);
+      await api.supprimerPrime(d.id);
       recharger();
     } catch (err) {
       setErreur(err.message);
@@ -482,6 +488,7 @@ export default function Compta({ isMobile }) {
         resultat: etat.resultat,
         soldeAvant: etat.soldeAvant,
         soldeApres: etat.soldeApres,
+        taux: etat.tauxImpot,
         lignes: etat.lignes,
       });
       const finie = libellePeriode(periode);
@@ -578,7 +585,6 @@ export default function Compta({ isMobile }) {
                   ["Ventes encaissées", tresorerie.ventes, "+"],
                   ["Rachats payés", tresorerie.achats, "−"],
                   ["Dépenses", tresorerie.depenses, "−"],
-                  ["Dividendes versées", tresorerie.dividendes, "−"],
                   [
                     `Salaires (${tresorerie.semainesPayees} semaine${tresorerie.semainesPayees > 1 ? "s" : ""} enregistrée${tresorerie.semainesPayees > 1 ? "s" : ""})`,
                     tresorerie.salaires,
@@ -846,7 +852,6 @@ export default function Compta({ isMobile }) {
           ["Rachats", vue?.achats, C.texte2],
           ["Dépenses", vue?.depenses, C.texte2],
           ["Salaires", vue?.salaires, C.texte2],
-          ["Dividendes", vue?.dividendes, C.ambre],
         ].map(([label, poste, couleur]) => (
           <div key={label} style={{ ...u.carte, padding: 16 }}>
             <div style={{ fontSize: 10.5, color: C.texte3, letterSpacing: 0.5, marginBottom: 6 }}>
@@ -1028,13 +1033,14 @@ export default function Compta({ isMobile }) {
         </div>
       )}
 
-      {/* ------------------------------------------------------------ dividendes */}
+      {/* ------------------------------------------------------------ primes */}
       {!ouverte && (
         <div style={{ ...u.carte, marginBottom: 18 }}>
-          <h2 style={u.titreCarte}>Dividendes de la semaine</h2>
+          <h2 style={u.titreCarte}>Primes de la semaine</h2>
           <p style={u.aide}>
-            Ce que les patrons se versent sur les bénéfices. C'est décaissé comme le
-            reste : ça descend le résultat de la semaine et ça part dans l'export.
+            Une prime versée à la main, à un employé ou à vous-même, en plus du
+            salaire. Le décret la range dans les charges : elle descend le
+            bénéfice brut et elle part dans l'export.
           </p>
 
           <form onSubmit={verser}>
@@ -1046,12 +1052,20 @@ export default function Compta({ isMobile }) {
                 alignItems: "end",
               }}
             >
-              <Champ
-                label="Bénéficiaire"
-                value={form.beneficiaire}
-                onChange={(e) => setForm({ ...form, beneficiaire: e.target.value })}
-                placeholder="Clovis Petit"
-              />
+              <Champ label="Employé">
+                <select
+                  style={u.champ}
+                  value={form.employeId}
+                  onChange={(e) => setForm({ ...form, employeId: e.target.value })}
+                >
+                  <option value="">— choisir —</option>
+                  {employes.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.prenom} {emp.nom} — {emp.grade}
+                    </option>
+                  ))}
+                </select>
+              </Champ>
               <Champ
                 label="Montant"
                 type="number"
@@ -1075,13 +1089,13 @@ export default function Compta({ isMobile }) {
             </div>
           </form>
 
-          {dividendesSemaine.length === 0 ? (
+          {primesSemaine.length === 0 ? (
             <div style={{ ...u.vide, marginTop: 14 }}>
-              Aucune dividende versée cette semaine.
+              Aucune prime versée cette semaine.
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
-              {dividendesSemaine.map((d) => (
+              {primesSemaine.map((d) => (
                 <div key={d.id} style={u.ligne}>
                   <div style={{ minWidth: 150, flex: 1 }}>
                     <div style={{ fontWeight: 700, fontSize: 14.5 }}>{d.beneficiaire}</div>
@@ -1103,7 +1117,7 @@ export default function Compta({ isMobile }) {
                     {argent(d.montant)}
                   </div>
                   <div style={{ marginLeft: "auto" }}>
-                    <BoutonSupprimer onConfirm={() => annulerDividende(d)} libelle="Annuler" />
+                    <BoutonSupprimer onConfirm={() => annulerPrime(d)} libelle="Annuler" />
                   </div>
                 </div>
               ))}
