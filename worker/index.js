@@ -651,7 +651,7 @@ on("GET", "/compta", "Co-patron", async (c) => {
   const fin = c.query.get("fin") || "9999-12-31";
 
   const mouvements = await c.db.tous(
-    `SELECT type, modele, genre, prix_final, date,
+    `SELECT id, employe_id, type, modele, genre, prix_final, date,
             client_nom, client_prenom, client_classe, vendeur_nom, vendeur_prenom
        FROM mouvements WHERE date(date) BETWEEN ? AND ? ORDER BY date`,
     debut, fin,
@@ -758,6 +758,8 @@ on("GET", "/compta", "Co-patron", async (c) => {
       detail: `${m.client_prenom} ${m.client_nom}`.trim() +
               (m.client_classe ? ` (classe ${m.client_classe})` : ""),
       par: `${m.vendeur_prenom} ${m.vendeur_nom}`.trim(),
+      mouvementId: m.id,
+      employeId: m.employe_id,
       entree: m.prix_final,
       sortie: 0,
     })),
@@ -768,6 +770,8 @@ on("GET", "/compta", "Co-patron", async (c) => {
       detail: `${m.client_prenom} ${m.client_nom}`.trim() +
               (m.client_classe ? ` (classe ${m.client_classe})` : ""),
       par: `${m.vendeur_prenom} ${m.vendeur_nom}`.trim(),
+      mouvementId: m.id,
+      employeId: m.employe_id,
       entree: 0,
       sortie: m.prix_final,
     })),
@@ -1397,6 +1401,21 @@ on("POST", "/mouvements", "Vendeur/Vendeuse", async (c) => {
       : await contratAutomatique(c.db, { type, mouvement, employe: c.employe });
 
   return { ...mouvement, contrat };
+});
+
+/** Rattacher une vente ou un rachat à un autre employé. */
+on("PATCH", "/mouvements/:id", "Manager", async (c) => {
+  const m = await c.db.un("SELECT * FROM mouvements WHERE id = ?", c.params.id);
+  if (!m) refus(404, "Opération introuvable.");
+  const e = await c.db.un(
+    "SELECT id, nom, prenom FROM employes WHERE id = ?", c.corps?.employeId,
+  );
+  if (!e) refus(400, "Choisis l employé à qui rattacher l opération.");
+  await c.db.exec(
+    "UPDATE mouvements SET employe_id = ?, vendeur_nom = ?, vendeur_prenom = ? WHERE id = ?",
+    e.id, e.nom, e.prenom, m.id,
+  );
+  return c.db.un("SELECT * FROM mouvements WHERE id = ?", m.id);
 });
 
 on("DELETE", "/mouvements/:id", "Co-patron", async (c) => {

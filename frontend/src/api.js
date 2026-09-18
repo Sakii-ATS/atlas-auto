@@ -228,6 +228,7 @@ export const api = {
   // ------------------------------------------------------------ mouvements
   mouvements: (type) => get("/mouvements" + (type ? `?type=${type}` : "")),
   creerMouvement: (m) => post("/mouvements", m),
+  majMouvement: (id, m) => patch(`/mouvements/${id}`, m),
   supprimerMouvement: (id) => del(`/mouvements/${id}`),
 
   // -------------------------------------------------------------- contrats

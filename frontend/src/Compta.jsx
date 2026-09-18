@@ -476,6 +476,17 @@ export default function Compta({ isMobile }) {
     }
   }
 
+  /** Rattacher une vente ou un rachat à un autre employé. */
+  async function changerVendeur(id, employeId) {
+    if (!employeId) return;
+    try {
+      await api.majMouvement(id, { employeId: Number(employeId) });
+      recharger();
+    } catch (err) {
+      setErreur(err.message);
+    }
+  }
+
   /** Fige la semaine puis enchaîne sur la suivante. */
   async function enregistrer() {
     setOccupe(true);
@@ -1157,11 +1168,11 @@ export default function Compta({ isMobile }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr>
-                  {["Date", "Type", "Libellé", "Détail", "Entrée", "Sortie"].map((h, i) => (
+                  {["Date", "Type", "Libellé", "Détail", "Par", "Entrée", "Sortie"].map((h, i) => (
                     <th
                       key={h}
                       style={{
-                        textAlign: i > 3 ? "right" : "left",
+                        textAlign: i > 4 ? "right" : "left",
                         padding: "8px 10px",
                         fontSize: 10.5,
                         color: C.texte3,
@@ -1189,6 +1200,24 @@ export default function Compta({ isMobile }) {
                     </td>
                     <td style={{ padding: "9px 10px", borderBottom: `1px solid ${C.bord}`, color: C.texte3 }}>
                       {l.detail}
+                    </td>
+                    <td style={{ padding: "9px 10px", borderBottom: `1px solid ${C.bord}`, color: C.texte3 }}>
+                      {l.mouvementId ? (
+                        <select
+                          style={{ ...u.champ, padding: "5px 8px", fontSize: 12.5, minWidth: 150 }}
+                          value={l.employeId || ""}
+                          onChange={(ev) => changerVendeur(l.mouvementId, ev.target.value)}
+                        >
+                          <option value="">{l.par || "—"}</option>
+                          {employes.map((emp) => (
+                            <option key={emp.id} value={emp.id}>
+                              {emp.prenom} {emp.nom}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        l.par || ""
+                      )}
                     </td>
                     <td style={{ padding: "9px 10px", textAlign: "right", borderBottom: `1px solid ${C.bord}`, color: C.vert, fontVariantNumeric: "tabular-nums" }}>
                       {l.entree ? argent(l.entree) : ""}
