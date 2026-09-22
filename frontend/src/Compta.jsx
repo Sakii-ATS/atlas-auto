@@ -131,6 +131,21 @@ const FEUILLES = [
     ],
   },
   {
+    cle: "Detail4",
+    nom: "4 dernières semaines",
+    quatre: true,
+    colonnes: [
+      { titre: "Semaine du", cle: "semaine", type: "date" },
+      { titre: "Date", cle: "date", type: "date" },
+      { titre: "Type", cle: "type" },
+      { titre: "Libellé", cle: "libelle" },
+      { titre: "Détail", cle: "detail" },
+      { titre: "Par", cle: "par" },
+      { titre: "Entrée", cle: "entree", type: "argent" },
+      { titre: "Sortie", cle: "sortie", type: "argent" },
+    ],
+  },
+  {
     cle: "Journal",
     nom: "Journal",
     journal: true,
@@ -181,7 +196,7 @@ function ecrireReglage(nom, valeur) {
  * Le solde du compte, lui, est retiré du résumé dès qu un poste est éteint :
  * il ne voudrait plus rien dire si on a mis des sorties de côté.
  */
-function feuillesDu(etat, inclus = {}, archives = []) {
+function feuillesDu(etat, inclus = {}, archives = [], detail = {}) {
   const veut = (cle) => inclus[cle] !== false;
 
   const toutes = etat.lignes || [];
@@ -273,6 +288,35 @@ function feuillesDu(etat, inclus = {}, archives = []) {
           brut: cumul("brut"),
           net: cumul("net"),
         }],
+      };
+    }
+
+    // ------------- le détail complet des quatre dernières semaines figées
+    if (f.quatre) {
+      const recentes = [...archives]
+        .sort((a, b) => (a.debut < b.debut ? 1 : -1))
+        .slice(0, 4)
+        .sort((a, b) => (a.debut < b.debut ? -1 : 1));
+      const tout = [];
+      if (actif) {
+        for (const a of recentes) {
+          for (const l of detail[a.id] || []) {
+            if (!veut(l.type)) continue;
+            tout.push({
+              ...l,
+              semaine: a.debut,
+              entree: l.entree || "",
+              sortie: l.sortie || "",
+            });
+          }
+        }
+      }
+      const cumule = (champ) => tout.reduce((s, x) => s + (Number(x[champ]) || 0), 0);
+      return {
+        nom: f.nom,
+        colonnes: cols,
+        lignes: tout,
+        pied: [{ type: "TOTAL", entree: cumule("entree"), sortie: cumule("sortie") }],
       };
     }
 
@@ -400,11 +444,25 @@ export default function Compta({ isMobile }) {
     setPeriode(decaler(periode, n));
   }
 
-  function exporter() {
+  async function exporter() {
     try {
+      // Le détail des quatre dernières semaines figées : on va chercher leur
+      // journal complet, il n est pas dans la liste des archives.
+      const recentes = [...archives]
+        .sort((a, b) => (a.debut < b.debut ? 1 : -1))
+        .slice(0, 4);
+      const detail = {};
+      for (const a of recentes) {
+        try {
+          const plein = await api.archiveCompta(a.id);
+          detail[a.id] = plein?.donnees?.lignes || [];
+        } catch {
+          detail[a.id] = [];
+        }
+      }
       telechargerClasseur(
         `compta-${vuePeriode.debut}-au-${vuePeriode.fin}.xlsx`,
-        feuillesDu(vue, inclus, archives),
+        feuillesDu(vue, inclus, archives, detail),
       );
     } catch (e) {
       setErreur(e.message);
