@@ -135,7 +135,6 @@ const FEUILLES = [
     nom: "4 dernières semaines",
     quatre: true,
     colonnes: [
-      { titre: "Semaine du", cle: "semaine", type: "date" },
       { titre: "Date", cle: "date", type: "date" },
       { titre: "Type", cle: "type" },
       { titre: "Libellé", cle: "libelle" },
@@ -293,30 +292,35 @@ function feuillesDu(etat, inclus = {}, archives = [], detail = {}) {
 
     // ------------- le détail complet des quatre dernières semaines figées
     if (f.quatre) {
+      // Un tableau par semaine, les uns sous les autres : rien ne se melange.
+      const jjmm = (d) => `${String(d).slice(8, 10)}/${String(d).slice(5, 7)}`;
       const recentes = [...archives]
         .sort((a, b) => (a.debut < b.debut ? 1 : -1))
         .slice(0, 4)
         .sort((a, b) => (a.debut < b.debut ? -1 : 1));
       const tout = [];
+      let totalE = 0;
+      let totalS = 0;
       if (actif) {
-        for (const a of recentes) {
-          for (const l of detail[a.id] || []) {
-            if (!veut(l.type)) continue;
-            tout.push({
-              ...l,
-              semaine: a.debut,
-              entree: l.entree || "",
-              sortie: l.sortie || "",
-            });
+        recentes.forEach((a, rang) => {
+          const dedans = (detail[a.id] || []).filter((l) => veut(l.type));
+          const e = dedans.reduce((s, l) => s + (Number(l.entree) || 0), 0);
+          const so = dedans.reduce((s, l) => s + (Number(l.sortie) || 0), 0);
+          totalE += e;
+          totalS += so;
+          tout.push({ date: `SEMAINE DU ${jjmm(a.debut)} AU ${jjmm(a.fin)}` });
+          for (const l of dedans) {
+            tout.push({ ...l, entree: l.entree || "", sortie: l.sortie || "" });
           }
-        }
+          tout.push({ type: "Total de la semaine", entree: e, sortie: so });
+          if (rang < recentes.length - 1) tout.push({});
+        });
       }
-      const cumule = (champ) => tout.reduce((s, x) => s + (Number(x[champ]) || 0), 0);
       return {
         nom: f.nom,
         colonnes: cols,
         lignes: tout,
-        pied: [{ type: "TOTAL", entree: cumule("entree"), sortie: cumule("sortie") }],
+        pied: [{ date: "TOTAL 4 SEMAINES", entree: totalE, sortie: totalS }],
       };
     }
 
