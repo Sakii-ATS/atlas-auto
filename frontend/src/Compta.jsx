@@ -320,6 +320,8 @@ function feuillesDu(etat, inclus = {}, archives = [], detail = {}) {
         nom: f.nom,
         colonnes: cols,
         lignes: tout,
+        // le filtre n a pas de sens ici : il melangerait les quatre blocs
+        sansFiltre: true,
         pied: [{ date: "TOTAL 4 SEMAINES", entree: totalE, sortie: totalS }],
       };
     }
@@ -801,6 +803,27 @@ export default function Compta({ isMobile }) {
           <div style={{ fontSize: 10.5, color: C.texte3, letterSpacing: 0.5, marginBottom: 8 }}>
             À METTRE DANS LE FICHIER EXCEL
           </div>
+          {POSTES.some((f) => f.montant && inclus[f.cle] === false) && (
+            <div
+              style={{
+                background: "rgba(214,90,80,0.12)",
+                border: `1px solid ${C.rouge}55`,
+                color: C.rouge,
+                borderRadius: 8,
+                padding: "9px 12px",
+                fontSize: 12,
+                fontWeight: 600,
+                lineHeight: 1.5,
+                marginBottom: 10,
+              }}
+            >
+              Attention : {POSTES.filter((f) => f.montant && inclus[f.cle] === false)
+                .map((f) => f.nom.toLowerCase())
+                .join(", ")}{" "}
+              hors du fichier. Le bénéfice brut et la taxe seront surévalués —
+              ne déclare pas cet export en l'état.
+            </div>
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {FEUILLES.map((f) => {
               const toujours = f.cle === "Résumé"; // le résumé reste toujours
