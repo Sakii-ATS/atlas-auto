@@ -69,7 +69,7 @@ Le code est sur GitHub, dans le dépôt **atlas-auto**. Cloudflare le met en lig
    - `DISCORD_TOKEN` : le token du bot.
    - `DISCORD_PUBLIC_KEY` : la clé publique.
    - `GOOGLE_JSON` : tout le contenu du fichier `google.json`. Ouvre-le avec l'éditeur de texte, copie tout et colle.
-4. Note l'adresse du Worker : `https://vapid-auto.….workers.dev`. Elle affiche « vapid-conta est en ligne. » quand le bot a remplacé l'ancien site.
+4. L'adresse du Worker est https://vapid-auto.last-gate.workers.dev Elle affiche « vapid-conta est en ligne. » quand le bot a remplacé l'ancien site.
 
 Le dépôt GitHub est public : le code se voit, mais aucune clé ni l'adresse du tableau ne sont dedans. Elles restent dans Cloudflare.
 
