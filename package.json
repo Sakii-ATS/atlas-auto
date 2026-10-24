@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "echo Rien à construire",
     "test": "node --test",
     "connexion": "XDG_CONFIG_HOME=.cloudflare wrangler login",
     "compte": "XDG_CONFIG_HOME=.cloudflare wrangler whoami",

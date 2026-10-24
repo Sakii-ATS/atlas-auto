@@ -1,10 +1,10 @@
 // À lancer une fois : enregistre /compta, /salaire et /maj, branche Discord sur le Worker et donne le lien d'invitation.
-// Utilisation : node enregistrer.mjs https://vapid-conta.<ton-compte>.workers.dev
+// Utilisation : node enregistrer.mjs https://vapid-auto.<ton-compte>.workers.dev
 import { createInterface } from "node:readline/promises";
 import { EMPLOYES_FIXES } from "./src/compta.js";
 
 const url = process.argv[2];
-if (!url) throw new Error("Donne l'adresse du Worker : node enregistrer.mjs https://vapid-conta.xxx.workers.dev");
+if (!url) throw new Error("Donne l'adresse du Worker : node enregistrer.mjs https://vapid-auto.xxx.workers.dev");
 const lecteur = createInterface({ input: process.stdin, output: process.stdout });
 const token = (await lecteur.question("Colle le token du bot Discord : ")).trim();
 lecteur.close();

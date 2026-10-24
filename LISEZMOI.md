@@ -63,19 +63,19 @@ Le site est en anglais, voici les boutons :
 Le code est sur GitHub, dans le dépôt **atlas-auto**. Cloudflare le met en ligne tout seul à chaque changement sur GitHub.
 
 1. Sur dash.cloudflare.com, connecte-toi au **bon compte** : pas celui de Kana du soir.
-2. Ouvre le Worker **vapid-conta** → **Paramètres → Build** : il doit être relié au dépôt `Sakii-ATS/atlas-auto`, branche `main`. Laisse la commande de build vide ; la commande de déploiement est `npx wrangler deploy`.
+2. Ouvre le Worker **vapid-auto** (celui de l'ancien site : le bot a pris sa place) → **Paramètres → Build** : il est relié au dépôt `Sakii-ATS/atlas-auto`, branche `main`. La commande de déploiement est `npx wrangler deploy`.
 3. **Paramètres → Variables et secrets** → ajoute ces 4 éléments, chacun de type **Secret** :
    - `SHEET_ID` : l'identifiant de la copie du tableau.
    - `DISCORD_TOKEN` : le token du bot.
    - `DISCORD_PUBLIC_KEY` : la clé publique.
    - `GOOGLE_JSON` : tout le contenu du fichier `google.json`. Ouvre-le avec l'éditeur de texte, copie tout et colle.
-4. Note l'adresse du Worker : `https://vapid-conta.….workers.dev`.
+4. Note l'adresse du Worker : `https://vapid-auto.….workers.dev`. Elle affiche « vapid-conta est en ligne. » quand le bot a remplacé l'ancien site.
 
 Le dépôt GitHub est public : le code se voit, mais aucune clé ni l'adresse du tableau ne sont dedans. Elles restent dans Cloudflare.
 
 ### 5. Brancher Discord sur le bot
 ```bash
-node enregistrer.mjs https://vapid-conta.xxx.workers.dev
+node enregistrer.mjs https://vapid-auto.xxx.workers.dev
 ```
 Remplace l'adresse par la tienne et colle le token quand il le demande. Le script affiche un lien : ouvre-le, choisis le serveur, puis **Autoriser**.
 

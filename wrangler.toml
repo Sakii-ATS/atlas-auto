@@ -1,4 +1,5 @@
-name = "vapid-conta"
+# Le bot a pris la place de l'ancien site : même Worker, relié au dépôt GitHub atlas-auto
+name = "vapid-auto"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 
@@ -8,4 +9,4 @@ compatibility_date = "2026-10-01"
 crons = ["* 21,22 * * *"]
 
 # Pas de [vars] ici : le dépôt GitHub est public. SHEET_ID (l'identifiant du tableau), DISCORD_TOKEN,
-# DISCORD_PUBLIC_KEY et GOOGLE_JSON sont des secrets, dans Cloudflare → vapid-conta → Paramètres → Variables et secrets.
+# DISCORD_PUBLIC_KEY et GOOGLE_JSON sont des secrets, dans Cloudflare → vapid-auto → Paramètres → Variables et secrets.
