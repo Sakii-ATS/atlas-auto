@@ -1,7 +1,7 @@
 // Fait tourner le Worker en entier avec un faux Discord et un faux Google Sheet en mémoire.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import worker, { tourner } from "../src/index.js";
+import worker, { tourner, miseEnForme } from "../src/index.js";
 import { embed } from "./aide.js";
 
 const sous = crypto.subtle;
@@ -125,7 +125,7 @@ function fauxGoogle(url, init) {
     for (const r of corps.requests) {
       if (r.deleteSheet) delete feuille[parId[r.deleteSheet.sheetId]];
       if (r.addSheet) { feuille[r.addSheet.properties.title] = []; if (r.addSheet.properties.hidden) caches.add(r.addSheet.properties.title); }
-      if (r.updateSheetProperties) {
+      if (r.updateSheetProperties?.properties.title) {
         const ancien = parId[r.updateSheetProperties.properties.sheetId];
         feuille[r.updateSheetProperties.properties.title] = feuille[ancien];
         delete feuille[ancien];
@@ -189,6 +189,9 @@ test("parcours complet : lecture du salon, /salaire, /compta, croix, clôture du
   assert.deepEqual(feuille["Résumé"][7], ["BÉNÉFICE BRUT", "", 49099 - 24326 - 500]);
   assert.deepEqual(feuille["Employés"].map(r => r[1]), ["Nom", "Clovis Petit", "Louis Lemarquis", "Rodrigo bella"]);
   assert.deepEqual(valides(), ["1001", "1002", "1004", "1005"]); // ✅ sur les messages comptés seulement
+  // « 4 dernières semaines » passe tout de suite à 5 colonnes, sans attendre la clôture
+  assert.deepEqual(feuille["4 dernières semaines"][0].filter(Boolean), ["Date", "Type", "Libellé", "Entrée", "Sortie"]);
+  assert.equal(feuille["4 dernières semaines"].filter(r => String(r[0] ?? "").startsWith("SEMAINE DU")).length, 4);
 
   // 2. Le cron ne fait rien en dehors du dimanche 23 h / 23 h 58 / 23 h 59 (heure de Paris)
   assert.equal(await programme("2026-10-24T21:00:00Z"), 0); // samedi
@@ -302,6 +305,24 @@ test("/salaire sans montant : 35 000 $ pour le Patron, montant obligatoire pour 
   await salaire("u1", "Clovis Petit", ["rp"]);
   assert.match(reponses.at(-1).content, /Salaire de \*\*35 000 \$\*\* pour \*\*Clovis Petit\*\* \(Patron\)/);
   assert.equal(reponses.at(-1).components[0].components[0].custom_id, "sal:1072:u1");
+});
+
+test("mise en forme : $ sur les montants, TOTAL en beige, trait noir épais entre les semaines", () => {
+  const quatre = [
+    ["Date", "Type", "Libellé", "Entrée", "Sortie"],
+    ["SEMAINE DU 19/10 AU 25/10"], [46318, "Vente occasion", "IMP51497", 6200, ""], ["", "Total de la semaine", "", 6200, 0], [],
+    ["TOTAL 4 SEMAINES", "", "", 6200, 0],
+  ];
+  const req = miseEnForme(7, "4 dernières semaines", quatre);
+  const ligne = i => req.filter(r => r.repeatCell?.range.startRowIndex === i && r.repeatCell.range.endRowIndex === i + 1);
+  assert.equal(ligne(3)[0].repeatCell.cell.userEnteredFormat.borders.bottom.style, "SOLID_THICK");
+  assert.equal(ligne(1)[0].repeatCell.cell.userEnteredFormat.textFormat.bold, true);
+  assert.ok(ligne(5)[0].repeatCell.cell.userEnteredFormat.backgroundColor);
+  const dollars = req.filter(r => r.repeatCell?.cell.userEnteredFormat.numberFormat?.pattern === '#,##0\\ "$"').map(r => r.repeatCell.range.startColumnIndex);
+  assert.deepEqual(dollars, [3, 4]);
+  assert.deepEqual(req[0].repeatCell.range, { sheetId: 7 }); // l'ancienne mise en forme est effacée d'abord
+  const ventes = miseEnForme(2, "Ventes", [["Date", "Véhicule", "Motif", "Encaissé"], [46318, "A", "Vente occasion", 6200], ["", "TOTAL", "", 6200]]);
+  assert.ok(ventes.some(r => r.repeatCell?.range.startRowIndex === 2 && r.repeatCell.cell.userEnteredFormat.backgroundColor));
 });
 
 test("signature : Discord est le seul à pouvoir appeler le bot", async () => {

@@ -2,14 +2,31 @@
 // et 23 h 59 (clôture de la semaine), et tient le Google Sheet de compta à jour. Chaque message compté reçoit un ✅. Les commandes /compta, /salaire et /maj arrivent ici par HTTP.
 
 import {
-  QUATRE, DONNEES, lireMessage, aDollar, croixDe, normaliser, heureParis, lundi, cloturer, afficherSemaine, afficherEmployes,
+  QUATRE, DONNEES, semainesAJour, remettreSemaines, lireMessage, aDollar, croixDe, normaliser, heureParis, lundi, cloturer, afficherSemaine, afficherEmployes,
   bilan, argent, jjmm, gradeDe, estDirection, nomDe, EMPLOYES_FIXES, DIRECTION, PRIME_MAX, fixeMax,
 } from "./compta.js";
 import { google, q } from "./google.js";
 
 const API = "https://discord.com/api/v10";
 const PAR_PAGE = 20;
-const COLONNES_DATE = { "Ventes": 1, "Rachats": 1, "Dépenses": 1, "Salaires": 1, [QUATRE]: 1, "Historique": 2, "Employés": 1 };
+// Mise en forme, reprise de l'ancien tableau : en-tête foncé, ligne TOTAL beige, montants en « $ »
+const FOND_ENTETE = { red: 0.137, green: 0.153, blue: 0.184 };
+const FOND_TOTAL = { red: 0.953, green: 0.914, blue: 0.839 };
+const FOND_SEMAINE = { red: 0.91, green: 0.92, blue: 0.93 };
+const TRAIT = { style: "SOLID", color: { red: 0, green: 0, blue: 0 } };
+const TRAIT_EPAIS = { style: "SOLID_THICK", color: { red: 0, green: 0, blue: 0 } };
+const DOLLARS = { type: "NUMBER", pattern: '#,##0\\ "$"' };
+const DATE = { type: "DATE", pattern: "dd/mm/yyyy" };
+// Colonnes de dates et de montants de chaque onglet (A = 0), et s'il a des flèches de tri (filtre)
+const COLONNES = {
+  "Ventes": { dates: [0], dollars: [3], filtre: true },
+  "Rachats": { dates: [0], dollars: [3], filtre: true },
+  "Dépenses": { dates: [0], dollars: [2], filtre: true },
+  "Salaires": { dates: [0], dollars: [3, 4, 5], filtre: true },
+  "Historique": { dates: [0, 1], dollars: [2, 3, 4, 6] },
+  [QUATRE]: { dates: [0], dollars: [3, 4] },
+  "Employés": { dates: [0], dollars: [], filtre: true },
+};
 
 async function discord(env, chemin, options = {}, essai = 0) {
   const r = await fetch(API + chemin, {
@@ -39,7 +56,7 @@ const PLAGES = [`${q("État")}!A1:B4`, `${q("Données")}!A2:F`, `${q("Résumé")
 
 // Crée les onglets qui manquent (la première fois) et met les colonnes de dates au bon format
 async function preparer(g) {
-  let onglets = await g.onglets();
+  const onglets = await g.onglets();
   const titres = new Set(onglets.map(o => o.title));
   const requetes = [];
   const ancienEmployes = onglets.find(o => o.title === "employer");
@@ -54,14 +71,52 @@ async function preparer(g) {
     if (!titres.has(titre)) requetes.push({ addSheet: { properties: { title: titre, hidden: titre === "Données" || titre === "État" } } });
   }
   if (requetes.length) await g.modifier(requetes);
-  onglets = await g.onglets();
-  await g.modifier(onglets.filter(o => COLONNES_DATE[o.title]).map(o => ({
-    repeatCell: {
-      range: { sheetId: o.sheetId, startColumnIndex: 0, endColumnIndex: COLONNES_DATE[o.title] },
-      cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "dd/mm/yyyy" } } },
-      fields: "userEnteredFormat.numberFormat",
-    },
-  })));
+}
+
+const peindre = (range, format, champs) => ({ repeatCell: { range, cell: { userEnteredFormat: format }, fields: champs } });
+
+// Mise en forme complète d'un onglet recalculé : l'ancienne est effacée (elle ne collait plus aux colonnes), puis refaite
+export function miseEnForme(sheetId, titre, rows) {
+  const { dates, dollars, filtre } = COLONNES[titre];
+  const largeur = Math.max(1, ...rows.map(r => r.length));
+  const zone = (r0, r1, c0 = 0, c1 = largeur) => ({ sheetId, startRowIndex: r0, endRowIndex: r1, startColumnIndex: c0, endColumnIndex: c1 });
+  const total = (i, bas = TRAIT) => peindre(zone(i, i + 1), { backgroundColor: FOND_TOTAL, textFormat: { bold: true }, borders: { top: TRAIT, bottom: bas } },
+    "userEnteredFormat(backgroundColor,textFormat,borders)");
+  const lignes = rows.flatMap((r, i) => {
+    if (i === 0) return [];
+    if (String(r[0] ?? "").startsWith("SEMAINE DU")) return [peindre(zone(i, i + 1), { backgroundColor: FOND_SEMAINE, textFormat: { bold: true } }, "userEnteredFormat(backgroundColor,textFormat)")];
+    if (r[1] === "Total de la semaine") return [total(i, TRAIT_EPAIS)]; // le trait noir entre deux semaines
+    return r[0] === "TOTAL" || r[1] === "TOTAL" || r[0] === "TOTAL 4 SEMAINES" ? [total(i)] : [];
+  });
+  return [
+    peindre({ sheetId }, {}, "userEnteredFormat"),
+    peindre(zone(0, 1), {
+      backgroundColor: FOND_ENTETE, horizontalAlignment: "CENTER",
+      textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } },
+      borders: { top: TRAIT, bottom: TRAIT, left: TRAIT, right: TRAIT },
+    }, "userEnteredFormat(backgroundColor,horizontalAlignment,textFormat,borders)"),
+    ...dates.map(c => peindre(zone(1, undefined, c, c + 1), { numberFormat: DATE }, "userEnteredFormat.numberFormat")),
+    ...dollars.map(c => peindre(zone(1, undefined, c, c + 1), { numberFormat: DOLLARS }, "userEnteredFormat.numberFormat")),
+    ...lignes,
+    // Le filtre de l'ancien tableau débordait sur des colonnes vides : on le recale, sans la ligne TOTAL
+    ...(filtre ? [{ setBasicFilter: { filter: { range: zone(0, rows.at(-1)?.includes("TOTAL") ? rows.length - 1 : rows.length) } } }] : []),
+    { updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: 1 } }, fields: "gridProperties.frozenRowCount" } },
+    { autoResizeDimensions: { dimensions: { sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: largeur } } },
+  ];
+}
+
+async function mettreEnForme(g, contenus) {
+  const onglets = await g.onglets();
+  const id = titre => onglets.find(o => o.title === titre)?.sheetId;
+  const requetes = Object.entries(contenus).filter(([titre]) => COLONNES[titre] && id(titre) !== undefined)
+    .flatMap(([titre, rows]) => miseEnForme(id(titre), titre, rows));
+  // Résumé garde sa mise en page : on s'assure seulement du « $ » sur les montants (C2 à C8 et C10)
+  if (id("Résumé") !== undefined) {
+    for (const [r0, r1] of [[1, 8], [9, 10]]) {
+      requetes.push(peindre({ sheetId: id("Résumé"), startRowIndex: r0, endRowIndex: r1, startColumnIndex: 2, endColumnIndex: 3 }, { numberFormat: DOLLARS }, "userEnteredFormat.numberFormat"));
+    }
+  }
+  await g.modifier(requetes);
 }
 
 export async function lireTout(g) {
@@ -90,8 +145,10 @@ export async function lireTout(g) {
 const completer = (rows, nbMin, largeur) =>
   [...rows, ...Array(Math.max(0, nbMin - rows.length)).fill([])].map(r => Array.from({ length: largeur }, (_, i) => r[i] ?? ""));
 
-export async function ecrire(g, t, { ops, etat = t.etat, histo, quatre }) {
-  const vues = afficherSemaine(ops, t.taux);
+export async function ecrire(g, t, { ops, etat = t.etat, histo, quatre, employes }) {
+  const vues = { ...afficherSemaine(ops, t.taux), ...(employes && { "Employés": employes }) };
+  // L'ancien « 4 dernières semaines » (avec Détail et Par) passe au nouveau format dès la première écriture
+  quatre ??= semainesAJour(t.quatre) ? null : remettreSemaines(t.quatre);
   await g.vider(Object.keys(vues).map(q)); // ces onglets sont recalculés en entier, on peut les vider
   const data = [
     { range: `${q("Données")}!A1`, values: completer([DONNEES, ...ops.map(o => [o.id, o.date, o.type, o.libelle, o.detail, o.montant])], t.nbDonnees + 1, 6) },
@@ -101,6 +158,7 @@ export async function ecrire(g, t, { ops, etat = t.etat, histo, quatre }) {
   if (histo) data.push({ range: `${q("Historique")}!A1`, values: completer(histo, t.histo.length, 8) });
   if (quatre) data.push({ range: `${q(QUATRE)}!A1`, values: completer(quatre, t.quatre.length, 7) });
   await g.ecrire(data);
+  await mettreEnForme(g, { ...vues, "Historique": histo ?? t.histo, [QUATRE]: quatre ?? t.quatre });
 }
 
 // ---------- Lecture du salon ----------
@@ -192,9 +250,7 @@ export async function tourner(env, maintenant = new Date(), { cloture = false } 
     ops = [];
     etat = { ...etat, debut: etat.dernier || etat.debut };
   }
-  await ecrire(g, t, { ops, etat, histo: clot?.histo, quatre: clot?.quatre });
-  await g.vider([q("Employés")]);
-  await g.ecrire([{ range: `${q("Employés")}!A1`, values: afficherEmployes(membres, roles) }]);
+  await ecrire(g, t, { ops, etat, histo: clot?.histo, quatre: clot?.quatre, employes: afficherEmployes(membres, roles) });
   if (clot && etat.dernier) {
     // Le 💵 sur le dernier message vu montre où la semaine suivante reprend
     await reaction(env, etat.salon, etat.dernier, "💵").catch(e => console.error("Réaction 💵 impossible :", e.message));

@@ -125,16 +125,28 @@ export function ajouterHistorique(rows, debut, b, taux) {
   return [rows[0] || HISTORIQUE, ...semaines, ["TOTAL", "", total(semaines, 2), total(semaines, 3), total(semaines, 4), "", total(semaines, 6), ""]];
 }
 
-// Ajoute une semaine à l'onglet « 4 dernières semaines » et ne garde que les 4 dernières
-export function ajouterSemaine(rows, debut, ops) {
-  // Les colonnes sont retrouvées par leur nom : l'ancien format (avec Détail et Par) est remis au nouveau
+// Semaines de l'onglet « 4 dernières semaines ». Les colonnes sont retrouvées par leur nom :
+// l'ancien format (avec Détail et Par) est remis au nouveau
+function lireSemaines(rows) {
   const places = COLONNES_SEMAINE.map(nom => (rows[0] || COLONNES_SEMAINE).indexOf(nom));
   const blocs = [];
   for (const r of rows.slice(1)) {
     if (String(r[0] ?? "").startsWith("SEMAINE DU")) blocs.push({ titre: r[0], lignes: [] });
     else if (blocs.length && typeof r[0] === "number") blocs.at(-1).lignes.push(places.map(i => (i < 0 ? "" : r[i] ?? "")));
   }
+  return blocs;
+}
+export const semainesAJour = rows => (rows[0] || []).join() === COLONNES_SEMAINE.join();
+export const remettreSemaines = rows => afficherSemaines(lireSemaines(rows));
+
+// Ajoute une semaine à l'onglet « 4 dernières semaines » et ne garde que les 4 dernières
+export function ajouterSemaine(rows, debut, ops) {
+  const blocs = lireSemaines(rows);
   blocs.push({ titre: `SEMAINE DU ${jjmm(debut)} AU ${jjmm(plusJours(debut, 6))}`, lignes: [...ops].sort(parDate).map(ligneSemaine) });
+  return afficherSemaines(blocs);
+}
+
+function afficherSemaines(blocs) {
   const garde = blocs.slice(-4);
   const out = [COLONNES_SEMAINE];
   for (const b of garde) out.push([b.titre], ...b.lignes, ["", "Total de la semaine", "", total(b.lignes, 3), total(b.lignes, 4)], []);
