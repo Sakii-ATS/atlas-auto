@@ -28,8 +28,11 @@ async function accessToken(env) {
   return access_token;
 }
 
+// Identifiant du tableau, même si c'est le lien entier qui a été collé (ou avec des espaces autour)
+export const idTableau = valeur => String(valeur ?? "").match(/\/d\/([\w-]+)/)?.[1] ?? String(valeur ?? "").trim();
+
 export function google(env) {
-  const base = `https://sheets.googleapis.com/v4/spreadsheets/${env.SHEET_ID}`;
+  const base = `https://sheets.googleapis.com/v4/spreadsheets/${idTableau(env.SHEET_ID)}`;
   async function appel(chemin, corps) {
     const r = await fetch(base + chemin, {
       method: corps ? "POST" : "GET",
@@ -38,7 +41,9 @@ export function google(env) {
     });
     if (!r.ok) {
       const msg = await r.text();
-      const e = new Error(`Google Sheets ${r.status} : ${msg}`);
+      const e = new Error(r.status === 404
+        ? "Google ne trouve pas le tableau : vérifie le secret SHEET_ID dans Cloudflare (la partie entre /d/ et /edit du lien de la copie)."
+        : `Google Sheets ${r.status} : ${msg}`);
       e.ongletManquant = r.status === 400 && msg.includes("Unable to parse range");
       throw e;
     }

@@ -5,3 +5,4 @@ node_modules/
 google.json
 *.json.key
 .dev.vars
+sauvegardes/

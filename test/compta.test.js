@@ -4,6 +4,14 @@ import {
   analyser, lireMessage, afficherSemaine, lundi, serie, bilan, ajouterHistorique, ajouterSemaine, cloturer, afficherEmployes, gradeDe, heureParis,
 } from "../src/compta.js";
 import { embed } from "./aide.js";
+import { idTableau } from "../src/google.js";
+
+test("SHEET_ID : on retrouve l'identifiant même avec le lien entier ou des espaces", () => {
+  const id = "1dSw3QOA3bDMYhS0jNXeIVWHBNh1L1n1utRFXrG08E2Q";
+  assert.equal(idTableau(id), id);
+  assert.equal(idTableau(`  ${id}\n`), id);
+  assert.equal(idTableau(`https://docs.google.com/spreadsheets/d/${id}/edit?gid=0#gid=0`), id);
+});
 
 
 test("les motifs sont rangés comme décidé", () => {
