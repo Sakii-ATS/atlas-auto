@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+# Connexion Cloudflare et clés : jamais sur GitHub
+.cloudflare/
+google.json
+*.json.key
+.dev.vars

@@ -1,16 +1,15 @@
 {
-  "name": "atlas-auto",
+  "name": "vapid-conta",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "npm --prefix frontend install && npm --prefix frontend run build",
-    "dev": "npm run build && wrangler dev",
-    "deploy": "npm run build && wrangler deploy",
-    "db:creer": "wrangler d1 create atlas-auto",
-    "db:init": "wrangler d1 execute atlas-auto --local --file=./migrations/0001_schema.sql && wrangler d1 execute atlas-auto --local --file=./migrations/0002_donnees.sql",
-    "db:init:ligne": "wrangler d1 execute atlas-auto --remote --file=./migrations/0001_schema.sql && wrangler d1 execute atlas-auto --remote --file=./migrations/0002_donnees.sql"
+    "test": "node --test",
+    "connexion": "XDG_CONFIG_HOME=.cloudflare wrangler login",
+    "compte": "XDG_CONFIG_HOME=.cloudflare wrangler whoami",
+    "deploy": "XDG_CONFIG_HOME=.cloudflare wrangler deploy",
+    "secret": "XDG_CONFIG_HOME=.cloudflare wrangler secret put"
   },
   "devDependencies": {
-    "wrangler": "^4.0.0"
+    "wrangler": "^4.152.0"
   }
 }

@@ -1,0 +1,11 @@
+name = "vapid-conta"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# Dimanche, heure de Paris : 23 h mise à jour, 23 h 01 à 23 h 57 pose des ✅, 23 h 58 revérification,
+# 23 h 59 clôture. Le cron tourne chaque minute de 21 h à 22 h 59 UTC, le code garde le bon créneau.
+[triggers]
+crons = ["* 21,22 * * *"]
+
+# Pas de [vars] ici : le dépôt GitHub est public. SHEET_ID (l'identifiant du tableau), DISCORD_TOKEN,
+# DISCORD_PUBLIC_KEY et GOOGLE_JSON sont des secrets, dans Cloudflare → vapid-conta → Paramètres → Variables et secrets.
