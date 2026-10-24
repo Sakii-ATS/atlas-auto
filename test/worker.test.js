@@ -66,7 +66,6 @@ const compteur = { discord: 0, google: 0 };
 const croixPar = {}; // id du message → utilisateurs qui ont mis ❌
 const reactionsBot = []; // « PUT /channels/… » ou « DELETE /channels/… »
 const limite = { prochain429: false };
-const valides = () => messages.filter(m => (m.reactions || []).some(r => r.emoji.name === "✅" && r.me)).map(m => m.id);
 
 function fauxDiscord(url, init) {
   compteur.discord++;
@@ -188,7 +187,6 @@ test("parcours complet : lecture du salon, /salaire, /compta, croix, clôture du
   assert.deepEqual(feuille["Salaires"], [["Date", "Employé", "Grade", "Fixe", "Primes", "Total versé"], ["", "TOTAL", "", 0, 0, 0]]);
   assert.deepEqual(feuille["Résumé"][7], ["BÉNÉFICE BRUT", "", 49099 - 24326 - 500]);
   assert.deepEqual(feuille["Employés"].map(r => r[1]), ["Nom", "Clovis Petit", "Louis Lemarquis", "Rodrigo bella"]);
-  assert.deepEqual(valides(), ["1001", "1002", "1004", "1005"]); // ✅ sur les messages comptés seulement
   // « 4 dernières semaines » passe tout de suite à 5 colonnes, sans attendre la clôture
   assert.deepEqual(feuille["4 dernières semaines"][0].filter(Boolean), ["Date", "Type", "Libellé", "Entrée", "Sortie"]);
   assert.equal(feuille["4 dernières semaines"].filter(r => String(r[0] ?? "").startsWith("SEMAINE DU")).length, 4);
@@ -201,7 +199,6 @@ test("parcours complet : lecture du salon, /salaire, /compta, croix, clôture du
   messages.push(embed("1006", "2026-10-25T19:00:00Z", "-25000 $", "Synchronisation fd_banking"));
   assert.equal(await programme("2026-10-25T22:00:00Z"), 1);
   assert.equal(feuille["Dépenses"].length, 4); // entête, 2 dépenses, total
-  assert.ok(valides().includes("1006"));
 
   // 4. /salaire Rodrigo : plus que le maximum refusé, puis 25 000 → le bot propose la dépense, on clique
   await interaction({ ...base, type: 2, data: { name: "salaire", options: [{ name: "employe", value: "u2" }, { name: "montant", value: 30000 }], resolved: { members: { u2: { nick: "Rodrigo bella", roles: ["rv"] } }, users: { u2: { id: "u2", username: "rodrigo" } } } } });
@@ -227,7 +224,6 @@ test("parcours complet : lecture du salon, /salaire, /compta, croix, clôture du
   await interaction({ ...base, type: 3, data: { custom_id: reponses.at(-1).components[0].components[0].custom_id } });
   assert.match(reponses.at(-1).embeds[0].description, /Ligne supprimée/);
   assert.ok(!colonne("Données", 0).includes("1001"));
-  assert.ok(!valides().includes("1001")); // supprimée avec /compta : le ✅ part aussi
   assert.equal(feuille["Données"].filter(r => r[0]).length, 5); // entête + 4 lignes, l'ancienne 5e ligne est effacée
 
   // 7. Croix : celle d'un vendeur ne compte pas, celle du patron retire la ligne à 23 h 58
@@ -240,11 +236,11 @@ test("parcours complet : lecture du salon, /salaire, /compta, croix, clôture du
   messages.push(embed("1008", "2026-10-25T22:40:00Z", "+700 $", "Synchronisation fd_banking")); // nouveau depuis 23 h
   await programme("2026-10-25T22:58:00Z");
   assert.deepEqual(colonne("Données", 0).filter(Boolean).slice(1), ["1002", "1005", "1006", "1008"]); // 1001 ne revient pas
-  assert.deepEqual(valides(), ["1002", "1005", "1006", "1008"]); // 1004 barrée : son ✅ est retiré
 
-  // 8. Dimanche 23 h 59 : clôture, 💵 sur le dernier message vu
+  // 8. Dimanche 23 h 59 : clôture, 💵 sur le dernier message vu (et seulement ça : pas de ✅)
+  limite.prochain429 = true; // Discord demande d'attendre une fois : le bot attend et réessaie
   await programme("2026-10-25T22:59:00Z");
-  assert.deepEqual(reactionsBot.filter(r => r.includes("💵")), ["PUT /channels/c1/messages/1008/reactions/💵/@me"]);
+  assert.deepEqual(reactionsBot, ["PUT /channels/c1/messages/1008/reactions/💵/@me"]);
   assert.equal(feuille["Données"].filter(r => r[0]).length, 1);
   assert.deepEqual(feuille["État"].slice(0, 2), [["Dernier message", "1008"], ["Début semaine", "1008"]]);
   const histo = feuille["Historique"].filter(r => r[0] !== undefined && r[0] !== "");
@@ -261,25 +257,18 @@ test("parcours complet : lecture du salon, /salaire, /compta, croix, clôture du
   await interaction({ ...base, type: 2, data: { name: "maj" } });
   assert.match(reponses.at(-1).embeds[0].description, /Compta mise à jour[\s\S]*Vente occasion · AB123/);
   assert.deepEqual(colonne("Données", 0).filter(Boolean), ["ID", "1009"]);
-  assert.ok(valides().includes("1009"));
 });
 
-test("beaucoup de messages : les ✅ sont posés par paquets, sans dépasser la limite de Cloudflare", async () => {
+test("beaucoup de messages : /maj les lit tous sans dépasser la limite de Cloudflare", async () => {
   const ids = Array.from({ length: 60 }, (_, i) => String(1010 + i));
   for (const id of ids) messages.push(embed(id, "2026-10-27T12:00:00Z", "+100 $", "Vente ZZ" + id + " [occas:1]"));
+  messages.push(embed("1070", "2026-10-27T13:00:00Z", "+1 $", "Synchronisation fd_banking")); // moins de 100 $ : ignoré
+  const avant = compteur.discord + compteur.google;
   await interaction({ ...base, type: 2, data: { name: "maj" } });
-  const nouveaux = () => valides().filter(id => ids.includes(id)).length;
-  assert.equal(nouveaux(), 15);
-  // Dimanche 1er novembre, 23 h 30 à Paris : seulement des ✅, pas de lecture de nouveaux messages
-  messages.push(embed("1070", "2026-11-01T22:00:00Z", "+1 $", "Vente TARD [occas:2]"));
-  limite.prochain429 = true; // Discord demande d'attendre une fois : le bot attend et réessaie
-  const appels = compteur.discord + compteur.google;
-  await programme("2026-11-01T22:30:00Z");
-  assert.equal(nouveaux(), 15 + 39);
-  assert.ok(compteur.discord + compteur.google - appels <= 50, "Cloudflare gratuit : 50 appels au plus par passage");
-  await programme("2026-11-01T22:31:00Z");
-  assert.equal(nouveaux(), 60);
+  assert.ok(compteur.discord + compteur.google - avant <= 50, "Cloudflare gratuit : 50 appels au plus par passage");
+  assert.ok(ids.every(id => colonne("Données", 0).includes(id)));
   assert.ok(!colonne("Données", 0).includes("1070"));
+  assert.ok(!reactionsBot.some(r => r.includes("✅")));
 });
 
 test("/salaire pour Louis Lemarquis, qui n'est pas sur le Discord", async () => {

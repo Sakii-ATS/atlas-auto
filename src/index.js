@@ -1,5 +1,5 @@
 // vapid-conta : lit le salon log-bancaire le dimanche à 23 h (mise à jour), 23 h 58 (revérification)
-// et 23 h 59 (clôture de la semaine), et tient le Google Sheet de compta à jour. Chaque message compté reçoit un ✅. Les commandes /compta, /salaire et /maj arrivent ici par HTTP.
+// et 23 h 59 (clôture de la semaine), et tient le Google Sheet de compta à jour. Les commandes /compta, /salaire et /maj arrivent ici par HTTP.
 
 import {
   QUATRE, DONNEES, semainesAJour, remettreSemaines, lireMessage, aDollar, croixDe, normaliser, heureParis, lundi, cloturer, afficherSemaine, afficherEmployes,
@@ -43,10 +43,6 @@ async function discord(env, chemin, options = {}, essai = 0) {
   return r.status === 204 ? null : r.json();
 }
 
-const VALIDE = "✅";
-const reaction = (env, salon, id, emoji, method = "PUT") =>
-  discord(env, `/channels/${salon}/messages/${id}/reactions/${encodeURIComponent(emoji)}/@me`, { method });
-const aMonValide = m => (m.reactions || []).some(r => r.emoji?.name === VALIDE && r.me);
 const plusRecent = (a, b) => (BigInt(a) > BigInt(b) ? a : b);
 const parId = (a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1);
 
@@ -198,20 +194,6 @@ async function croixValide(env, salon, msg, direction) {
   return false;
 }
 
-// ✅ sur les messages comptés qui ne l'ont pas encore. Cloudflare gratuit limite à 50 appels par passage :
-// on en pose au plus « max », les suivants passent la minute d'après.
-async function marquer(env, salon, ids, messages, max) {
-  for (const m of messages.filter(m => ids.has(m.id) && !aMonValide(m)).slice(0, max)) await reaction(env, salon, m.id, VALIDE);
-}
-
-// Entre 23 h 01 et 23 h 57 : pose les ✅ qui manquent encore
-export async function marquerSemaine(env) {
-  const t = await lireTout(google(env));
-  if (!t.etat.debut || !t.ops.length) return;
-  const semaine = await messagesDeLaSemaine(env, t.etat.salon, t.etat.debut);
-  await marquer(env, t.etat.salon, new Set(t.ops.map(o => o.id)), semaine, 40 - Math.ceil((semaine.length + 1) / 100));
-}
-
 async function trouverSalon(env) {
   const [serveur] = await discord(env, "/users/@me/guilds");
   if (!serveur) throw new Error("Le bot n'est sur aucun serveur Discord : invite-le d'abord.");
@@ -245,7 +227,6 @@ export async function tourner(env, maintenant = new Date(), { cloture = false } 
   let ops = [...t.ops.filter(o => !barres.has(o.id)), ...neufs.map(lireMessage).filter(Boolean)];
   if (semaine.length) etat = { ...etat, dernier: semaine.at(-1).id };
   const clot = cloture ? cloturer(ops, lundi(heureParis(maintenant)), t.histo, t.quatre, t.taux) : null;
-  const comptes = new Set(ops.map(o => o.id));
   if (clot) {
     ops = [];
     etat = { ...etat, debut: etat.dernier || etat.debut };
@@ -253,14 +234,8 @@ export async function tourner(env, maintenant = new Date(), { cloture = false } 
   await ecrire(g, t, { ops, etat, histo: clot?.histo, quatre: clot?.quatre, employes: afficherEmployes(membres, roles) });
   if (clot && etat.dernier) {
     // Le 💵 sur le dernier message vu montre où la semaine suivante reprend
-    await reaction(env, etat.salon, etat.dernier, "💵").catch(e => console.error("Réaction 💵 impossible :", e.message));
-  }
-  try {
-    // ✅ = compté : on l'enlève des messages barrés depuis, et on en pose 15 au plus ici (le reste entre 23 h 01 et 23 h 57)
-    for (const m of semaine) if (barres.has(m.id) && aMonValide(m)) await reaction(env, etat.salon, m.id, VALIDE, "DELETE");
-    await marquer(env, etat.salon, comptes, semaine, 15);
-  } catch (e) {
-    console.error("Réactions ✅ impossibles :", e.message);
+    await discord(env, `/channels/${etat.salon}/messages/${etat.dernier}/reactions/${encodeURIComponent("💵")}/@me`, { method: "PUT" })
+      .catch(e => console.error("Réaction 💵 impossible :", e.message));
   }
   return { ops, taux: t.taux };
 }
@@ -370,7 +345,6 @@ async function action(env, i) {
     const t = await lireTout(g);
     const ops = t.ops.filter(o => o.id !== a);
     if (ops.length !== t.ops.length) await ecrire(g, t, { ops });
-    if (t.etat.salon) await reaction(env, t.etat.salon, a, VALIDE, "DELETE").catch(() => {}); // plus compté : plus de ✅
     return vueCompta(ops, t.taux, Number(b), "✅ Ligne supprimée.");
   }
   if (quoi === "sal") {
@@ -425,14 +399,13 @@ export default {
     return new Response("Type inconnu", { status: 400 });
   },
 
-  // Cloudflare ne connaît que l'heure UTC : le cron tourne chaque minute de 21 h à 22 h 59 UTC,
-  // et on ne garde que le dimanche de 23 h à 23 h 59 à l'heure de Paris (été comme hiver).
+  // Cloudflare ne connaît que l'heure UTC : le cron tourne à 21 h et 22 h UTC (minutes 0, 58 et 59),
+  // et on ne garde que dimanche 23 h, 23 h 58 et 23 h 59 à l'heure de Paris (été comme hiver).
   async scheduled(event, env, ctx) {
     const maintenant = new Date(event.scheduledTime);
     const h = heureParis(maintenant), minute = h.slice(11);
-    if (new Date(h.slice(0, 10) + "T00:00:00Z").getUTCDay() !== 0 || !minute.startsWith("23:")) return;
+    if (new Date(h.slice(0, 10) + "T00:00:00Z").getUTCDay() !== 0) return;
     if (minute === "23:00" || minute === "23:58") ctx.waitUntil(tourner(env, maintenant));
-    else if (minute === "23:59") ctx.waitUntil(tourner(env, maintenant, { cloture: true }));
-    else ctx.waitUntil(marquerSemaine(env));
+    if (minute === "23:59") ctx.waitUntil(tourner(env, maintenant, { cloture: true }));
   },
 };

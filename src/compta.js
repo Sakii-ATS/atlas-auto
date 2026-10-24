@@ -48,7 +48,7 @@ export const argent = n => (n < 0 ? "-" : "") + String(Math.abs(n)).replace(/\B(
 export function analyser(mouvement, motif) {
   // shortcut: les centimes ne sont pas gérés, le serveur n'affiche que des montants entiers
   const montant = parseInt(String(mouvement).replace(/[^\d+-]/g, ""), 10);
-  if (!Number.isFinite(montant) || montant === 0) return null;
+  if (!Number.isFinite(montant) || Math.abs(montant) < 100) return null; // moins de 100 $ : ne compte pas
   const m = normaliser(motif);
   const plaque = (String(motif).match(/^\s*(?:vente|rachat|commission import)\s+([^\s[]+)/i) || [])[1] || "";
   if (m.startsWith("commissionimport") && montant > 0) return { type: "Vente", libelle: "Commission import", detail: plaque, montant };

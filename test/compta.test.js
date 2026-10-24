@@ -14,6 +14,10 @@ test("les motifs sont rangés comme décidé", () => {
   assert.deepEqual(analyser("+300 $", "Synchronisation fd_banking"), { type: "Vente", libelle: "Entrée", detail: "", montant: 300 });
   assert.equal(analyser("+1 000 $", "x").montant, 1000);
   assert.equal(analyser("0 $", "x"), null);
+  // Moins de 100 $ : ne compte pas
+  assert.equal(analyser("+1 $", "Synchronisation fd_banking"), null);
+  assert.equal(analyser("-99 $", "Synchronisation fd_banking"), null);
+  assert.equal(analyser("+100 $", "Vente AB1 [occas:1]").montant, 100);
 });
 
 test("un message Discord devient une opération à l'heure de Paris", () => {

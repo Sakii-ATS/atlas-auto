@@ -5,11 +5,8 @@ Le bot de compta de la concession Vapid. Il lit le salon **log-bancaire** et rem
 ## Ce qu'il fait
 
 - **Dimanche 23 h 00** : met la compta à jour.
-- **Dimanche 23 h 01 à 23 h 57** : met un ✅ sur chaque message compté. Cloudflare gratuit limite le nombre d'actions, donc il en pose 40 par minute au plus.
-- **Dimanche 23 h 58** : revérifie. Il ajoute les messages arrivés depuis 23 h et retire ceux qui ont une ❌ (leur ✅ part aussi).
+- **Dimanche 23 h 58** : revérifie. Il ajoute les messages arrivés depuis 23 h et retire ceux qui ont une ❌.
 - **Dimanche 23 h 59** : clôture la semaine. Il l'ajoute à l'onglet Historique (on garde tout) et à « 4 dernières semaines » (on garde les 4 dernières), puis vide les onglets de la semaine. Il met un 💵 sur le dernier message vu : la semaine suivante repart de là.
-
-✅ = ce message est compté. Une ligne supprimée avec `/compta` perd aussi son ✅.
 
 Comment il range les messages :
 
@@ -20,6 +17,8 @@ Comment il range les messages :
 | Rachat … | Rachats | Rachat occasion |
 | autre chose, argent qui sort | Dépenses | Dépense |
 | autre chose, argent qui rentre | Ventes | Entrée |
+
+Les mouvements de **moins de 100 $** ne comptent pas.
 
 La colonne Véhicule contient la plaque. Il n'y a ni nom de client, ni nom de vendeur.
 

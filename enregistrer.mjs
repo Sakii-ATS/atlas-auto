@@ -6,7 +6,11 @@ import { EMPLOYES_FIXES } from "./src/compta.js";
 const url = process.argv[2];
 if (!url) throw new Error("Donne l'adresse du Worker : node enregistrer.mjs https://vapid-auto.xxx.workers.dev");
 const lecteur = createInterface({ input: process.stdin, output: process.stdout });
-const token = (await lecteur.question("Colle le token du bot Discord : ")).trim();
+const question = "Colle le token du bot Discord (il ne s'affiche pas) : ";
+// Le token ne doit pas s'afficher à l'écran : on n'écrit que la question, pas ce qui est collé
+lecteur._writeToOutput = texte => { if (texte.includes(question)) process.stdout.write(question); };
+const token = (await lecteur.question(question)).trim();
+process.stdout.write("\n");
 lecteur.close();
 
 async function api(chemin, methode = "GET", corps) {
