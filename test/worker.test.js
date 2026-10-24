@@ -314,6 +314,14 @@ test("mise en forme : $ sur les montants, TOTAL en beige, trait noir épais entr
   assert.ok(ventes.some(r => r.repeatCell?.range.startRowIndex === 2 && r.repeatCell.cell.userEnteredFormat.backgroundColor));
 });
 
+test("page d'accueil : dit quels réglages manquent, sans montrer les valeurs", async () => {
+  const page = async e => (await worker.fetch(new Request("https://vapid.workers.dev/"), e, {})).text();
+  assert.equal(await page(env), "vapid-conta est en ligne.");
+  const sansCle = await page({ ...env, DISCORD_PUBLIC_KEY: undefined, GOOGLE_JSON: "" });
+  assert.match(sansCle, /Il manque dans Cloudflare : DISCORD_PUBLIC_KEY, GOOGLE_JSON$/);
+  assert.ok(!sansCle.includes(env.SHEET_ID));
+});
+
 test("signature : Discord est le seul à pouvoir appeler le bot", async () => {
   assert.equal((await interaction({ type: 1 }, false)).status, 401);
   const r = await interaction({ type: 1 });

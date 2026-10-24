@@ -2,6 +2,9 @@
 name = "vapid-auto"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
+# Garde les valeurs ajoutées dans le tableau de bord Cloudflare à chaque mise en ligne depuis GitHub
+# (sans ça, celles de type « Texte » sont effacées : c'est arrivé le 2026-10-24)
+keep_vars = true
 
 # Dimanche, heure de Paris : 23 h mise à jour, 23 h 58 revérification, 23 h 59 clôture.
 # Le cron tourne à 21 h et 22 h UTC (minutes 0, 58 et 59), le code garde le bon créneau.

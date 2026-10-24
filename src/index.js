@@ -388,7 +388,12 @@ const json = o => new Response(JSON.stringify(o), { headers: { "content-type": "
 
 export default {
   async fetch(req, env, ctx) {
-    if (req.method !== "POST") return new Response("vapid-conta est en ligne.");
+    // La page d'accueil dit quels réglages manquent (les noms seulement, jamais les valeurs)
+    const manquants = ["SHEET_ID", "DISCORD_TOKEN", "DISCORD_PUBLIC_KEY", "GOOGLE_JSON"].filter(nom => !env[nom]);
+    if (req.method !== "POST") {
+      return new Response(`vapid-conta est en ligne.${manquants.length ? `\nIl manque dans Cloudflare : ${manquants.join(", ")}` : ""}`);
+    }
+    if (manquants.includes("DISCORD_PUBLIC_KEY")) return new Response("Il manque DISCORD_PUBLIC_KEY dans Cloudflare", { status: 500 });
     const corps = await req.text();
     if (!(await signatureValide(req, corps, env.DISCORD_PUBLIC_KEY))) return new Response("Signature invalide", { status: 401 });
     const i = JSON.parse(corps);
