@@ -50,8 +50,9 @@ export function analyser(mouvement, motif) {
   const montant = parseInt(String(mouvement).replace(/[^\d+-]/g, ""), 10);
   if (!Number.isFinite(montant) || Math.abs(montant) < 100) return null; // moins de 100 $ : ne compte pas
   const m = normaliser(motif);
-  const plaque = (String(motif).match(/^\s*(?:vente|rachat|commission import)\s+([^\s[]+)/i) || [])[1] || "";
+  const plaque = (String(motif).match(/^\s*(?:vente|rachat|commission import|export port)\s+([^\s[]+)/i) || [])[1] || "";
   if (m.startsWith("commissionimport") && montant > 0) return { type: "Vente", libelle: "Commission import", detail: plaque, montant };
+  if (m.startsWith("exportport") && montant > 0) return { type: "Vente", libelle: "Entrée export", detail: plaque, montant };
   if (m.startsWith("vente") && montant > 0) return { type: "Vente", libelle: "Vente occasion", detail: plaque, montant };
   if (m.startsWith("rachat") && montant < 0) return { type: "Rachat", libelle: "Rachat occasion", detail: plaque, montant };
   return montant < 0

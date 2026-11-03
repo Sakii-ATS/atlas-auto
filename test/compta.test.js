@@ -19,6 +19,7 @@ test("les motifs sont rangés comme décidé", () => {
   assert.deepEqual(analyser("-24326 $", "Rachat LG32764 [occas:240]"), { type: "Rachat", libelle: "Rachat occasion", detail: "LG32764", montant: -24326 });
   assert.deepEqual(analyser("+6200 $", "Vente IMP51497 [occas:241]"), { type: "Vente", libelle: "Vente occasion", detail: "IMP51497", montant: 6200 });
   assert.deepEqual(analyser("+42899 $", "Commission import IMP19762 [occas:243]"), { type: "Vente", libelle: "Commission import", detail: "IMP19762", montant: 42899 });
+  assert.deepEqual(analyser("+30000 $", "Export port IMP12345 [occas:250]"), { type: "Vente", libelle: "Entrée export", detail: "IMP12345", montant: 30000 });
   assert.deepEqual(analyser("+300 $", "Synchronisation fd_banking"), { type: "Vente", libelle: "Entrée", detail: "", montant: 300 });
   assert.equal(analyser("+1 000 $", "x").montant, 1000);
   assert.equal(analyser("0 $", "x"), null);

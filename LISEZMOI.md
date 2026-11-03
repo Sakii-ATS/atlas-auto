@@ -14,6 +14,7 @@ Comment il range les messages :
 |---|---|---|
 | Vente … | Ventes | Vente occasion |
 | Commission import … | Ventes | Commission import |
+| Export port … | Ventes | Entrée export |
 | Rachat … | Rachats | Rachat occasion |
 | autre chose, argent qui sort | Dépenses | Dépense |
 | autre chose, argent qui rentre | Ventes | Entrée |
